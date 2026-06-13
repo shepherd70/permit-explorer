@@ -16,4 +16,5 @@ Status values: `todo` | `in-progress` | `done` | `dropped`
 ## Log
 
 - 2026-06-12 — Dashboard built and verified; deep-dive analytics added; repo created.
-- 2026-06-12 — City-wide live-API explorer added: aggregate city mode + permit-level detail mode (<8K scope), community bubble map with drill-down, community/class/work/status filters.
+- 2026-06-12 — City-wide live-API explorer added: aggregate city mode + permit-level detail mode, community bubble map with drill-down, community/class/work/status filters.
+- 2026-06-12 — Cost & days-to-issue distributions now work city-wide via server-side case() binning; detail threshold raised 8K -> 30K (any single year city-wide now unlocks detail mode).

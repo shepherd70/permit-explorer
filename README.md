@@ -25,9 +25,10 @@ share it by sending the file.
 
 1. **City-wide explorer** (`dist/city_explorer.html`) — just open it in a browser
    (needs internet). Queries Calgary's open-data API live: all 490K+ permits,
-   every community, always current. Aggregated city view; filter to under
-   8,000 permits (e.g. pick a community) to unlock permit-level detail,
-   distributions, renovation lifecycle, and individual map points.
+   every community, always current. Aggregated city view (including cost and
+   days-to-issue distributions via server-side binning); filter to under
+   30,000 permits (a community, or one year city-wide) to unlock
+   permit-level detail, renovation lifecycle, and individual map points.
 2. **Offline single-community dashboard** (`dist/permit_dashboard.html`) —
    self-contained file built from a CSV export; works without internet.
 

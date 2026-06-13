@@ -128,9 +128,9 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:8px 0 16px}
 </section>
 
 <section class="grid three">
-  <div class="card" id="card-costh"><h3>Project cost distribution</h3><div class="ch"><canvas id="c-costh"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 8,000 permits</div></div>
-  <div class="card" id="card-dtih"><h3>Days-to-issue distribution</h3><div class="ch"><canvas id="c-dtih"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 8,000 permits</div></div>
-  <div class="card" id="card-renov"><h3>Renovation lifecycle <span class="hint">— years from new build to first renovation</span></h3><div class="ch"><canvas id="c-renov"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 8,000 permits</div></div>
+  <div class="card" id="card-costh"><h3>Project cost distribution <span class="hint" id="costh-hint"></span></h3><div class="ch"><canvas id="c-costh"></canvas></div></div>
+  <div class="card" id="card-dtih"><h3>Days-to-issue distribution</h3><div class="ch"><canvas id="c-dtih"></canvas></div></div>
+  <div class="card" id="card-renov"><h3>Renovation lifecycle <span class="hint">— years from new build to first renovation</span></h3><div class="ch"><canvas id="c-renov"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 30,000 permits<br>(e.g. one community, or one year city-wide)</div></div>
 </section>
 
 <section class="card" style="margin-bottom:var(--gap)">
@@ -150,9 +150,9 @@ footer{text-align:center;font-size:12px;color:var(--muted);padding:8px 0 16px}
 
 <footer>Live dashboard &middot; data: City of Calgary open data (c2es-76ed), queried on view &middot; requires internet</footer>
 </div>
-<script>
+                                                                                     <script>
 const API = 'https://data.calgary.ca/resource/c2es-76ed.json';
-const DETAIL_THRESHOLD = 8000;
+const DETAIL_THRESHOLD = 30000;
 const COLORS = ['#4C72B0','#DD8452','#55A868','#C44E52','#8172B3','#937860','#DA8BC3','#8C8C8C','#CCB974','#64B5CD'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const STATUS_COLORS = {'Completed':['#e6f4ea','#1e7e34'],'Issued Permit':['#e7f0fb','#2a5db0'],'Cancelled':['#fdeaea','#b02a37'],'Expired':['#fff3cd','#856404'],'Hold':['#fde2cf','#a4521a'],'In Review':['#ece7f6','#5e4b8b'],'File Closed':['#eceff1','#546e7a']};
@@ -165,6 +165,18 @@ const median = a => {if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);co
 const binCounts=(vals,bins)=>{const out=bins.map(()=>0);vals.forEach(v=>{for(let i=0;i<bins.length;i++){if(v<=bins[i].max){out[i]++;break;}}});return out;};
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const sq=s=>String(s).replace(/'/g,"''");
+
+function caseBins(expr,bins){
+  const parts=[];
+  bins.forEach((b,i)=>{ parts.push(b.max===Infinity?`${expr} > ${bins[i-1].max},'${i}'`:`${expr} <= ${b.max},'${i}'`); });
+  return `case(${parts.join(',')})`;
+}
+function binsFromGroups(rows,bins){
+  if(!rows) return null;
+  const out=bins.map(()=>0);
+  rows.forEach(r=>{ const i=+r.b; if(r.b!=null&&i>=0&&i<bins.length) out[i]=+r.n; });
+  return out;
+}
 
 async function soql(params){
   const qs = Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
@@ -245,14 +257,16 @@ const D = {
   async enterCity(where,q,head){
     this.mode='city'; this.rows=null; this.renovLags=[];
     const W = w => { const conds=[w,where].filter(Boolean).join(' AND '); return conds?{where:conds}:{}; };
-    const [yr, cls, work, month, contr, status, comms] = await Promise.all([
+    const [yr, cls, work, month, contr, status, comms, costh, dtih] = await Promise.all([
       soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}),
       soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}),
       soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}),
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}),
       soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}),
-      soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q})
+      soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}),
+      soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}).catch(()=>null),
+      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}).catch(()=>null)
     ]);
     this.stats = {
       yr: yr.filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d})),
@@ -260,6 +274,7 @@ const D = {
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
       comms: comms.map(r=>({name:r.k,n:+r.n,lat:+r.lat,lng:+r.lng,cost:+r.c||0})),
+      costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
       head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d}
     };
     this.render();
@@ -316,7 +331,8 @@ const D = {
     document.getElementById('mode-badge').textContent = detail?'detail mode — permit-level data':'city mode — aggregated';
     document.getElementById('mode-badge').className = 'mode '+(detail?'detail':'city');
     document.getElementById('count-badge').textContent = `${fmtN(this.total)} permits in scope`;
-    ['card-costh','card-dtih','card-renov'].forEach(id=>document.getElementById(id).classList.toggle('locked',!detail));
+    document.getElementById('card-renov').classList.toggle('locked',!detail);
+    document.getElementById('costh-hint').textContent = detail?'':(s.costh?`— ${fmtN(s.costh.reduce((a,b)=>a+b,0))} permits with cost data`:'— unavailable right now');
     // KPIs
     const h=s.head;
     document.getElementById('k-count').textContent=fmtN(h.n);
@@ -364,6 +380,9 @@ const D = {
       const maxLag=15,rl=Array(maxLag+1).fill(0);
       this.renovLags.forEach(v=>rl[Math.min(Math.floor(v),maxLag)]++);
       set(this.charts.renov,rl.map((_,i)=>i<maxLag?`${i}–${i+1}`:`${maxLag}+`),rl);
+    }else{
+      set(this.charts.costh,COST_BINS.map(b=>b.l),s.costh||[]);
+      set(this.charts.dtih,DTI_BINS.map(b=>b.l),s.dtih||[]);
     }
     this.updateMap(); this.insights();
   },
@@ -456,7 +475,7 @@ const D = {
           out.push(`Cost concentration: the top <b>10%</b> of projects account for <b>${(costs.slice(0,n10).reduce((a,b)=>a+b,0)/tot*100).toFixed(0)}%</b> of estimated value.`);
         }
       }else{
-        out.push(`Filter down to under <b>${fmtN(DETAIL_THRESHOLD)}</b> permits (pick a community, class, or short year range) to unlock distributions, renovation lifecycle, and the permit-point map.`);
+        out.push(`Filter down to under <b>${fmtN(DETAIL_THRESHOLD)}</b> permits (a community, or a single year city-wide) to unlock median KPIs, renovation lifecycle, and the permit-point map.`);
       }
     } else out.push('No permits match the current filters.');
     document.getElementById('insights').innerHTML=out.map(t=>`<div class="insight">${t}</div>`).join('');
