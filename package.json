@@ -1,0 +1,17 @@
+{
+  "name": "permit-explorer",
+  "version": "1.0.0",
+  "description": "Interactive dashboards for exploring City of Calgary building-permit data — a live city-wide explorer plus a self-contained offline community dashboard.",
+  "private": true,
+  "scripts": {
+    "test": "node test/harness.js && node test/city_harness.js",
+    "test:city": "node test/city_harness.js",
+    "test:offline": "node test/harness.js",
+    "build": "python build.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shepherd70/permit-explorer.git"
+  },
+  "license": "MIT"
+}

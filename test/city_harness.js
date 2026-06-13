@@ -1,4 +1,10 @@
 // Headless harness for the live city explorer (stubbed fetch). Run: node test/city_harness.js
+// Asserts behaviour against canned Socrata responses; exits non-zero on any failure.
+// --- tiny assertion framework ---
+let failures=0, passes=0;
+function check(name,cond,got){ if(cond){passes++;console.log('  PASS',name);} else {failures++;console.error('  FAIL',name,got!==undefined?('-> got: '+JSON.stringify(got)):'');} }
+const digits=s=>String(s==null?'':s).replace(/[^0-9]/g,'');
+
 // --- DOM stubs ---
 const els={};
 function el(id){ if(!els[id]) els[id]={id,value:'',textContent:'',innerHTML:'',className:'',style:{},options:[],disabled:false,
@@ -6,9 +12,9 @@ function el(id){ if(!els[id]) els[id]={id,value:'',textContent:'',innerHTML:'',c
   appendChild(){}, classList:{_s:new Set(),toggle(c,on){on?this._s.add(c):this._s.delete(c)},add(c){this._s.add(c)},remove(c){this._s.delete(c)}}}; return els[id]; }
 ['f-cls','f-work','f-status'].forEach(id=>el(id).value='all');
 global.Option=function(t,v){return{text:t,value:String(v)}};
-global.document={getElementById:el,createElement:()=>({})};
+global.document={getElementById:el,createElement:()=>({}),body:{appendChild(){},removeChild(){}}};
 global.Chart=class{constructor(c,cfg){this.data=(cfg&&cfg.data)||{labels:[],datasets:[]}}update(){}};
-global.L={map:()=>({setView(){return this},fitBounds(){},closePopup(){}}),tileLayer:()=>({addTo(){}}),
+global.L={map:()=>({setView(){return this},fitBounds(){},closePopup(){},invalidateSize(){}}),tileLayer:()=>({addTo(){}}),
   layerGroup:()=>({addTo(){return this},clearLayers(){}}),
   circleMarker:()=>({bindPopup(){return this},addTo(){return this}})};
 
@@ -19,7 +25,7 @@ global.fetch=async(url)=>{
   const u=new URL(url); const p=Object.fromEntries(u.searchParams);
   const sel=p['$select']||'', grp=p['$group']||'', where=p['$where']||'';
   const detailScope = where.includes("communityname) = 'HARVEST HILLS'");
-  const json=(d)=>({ok:true,json:async()=>d,text:async()=>JSON.stringify(d)});
+  const json=(d)=>({ok:true,status:200,json:async()=>d,text:async()=>JSON.stringify(d)});
   if(sel.includes('count(1) as n, sum(estprojectcost)')&&!grp)
     return json([{n:detailScope?'1480':'490787',c:detailScope?'220000000':'3.1e10',u:detailScope?'949':'356804',d:'23.6'}]);
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
@@ -50,23 +56,70 @@ eval(src+'\nglobalThis.D=D;');
 (async()=>{
   await new Promise(r=>setTimeout(r,50)); // let init's async finish
   console.log('after init: year options:', el('f-y1').options.length, '| communities:', D.communities.length);
+  check('init populated year options', el('f-y1').options.length===2, el('f-y1').options.length);
+  check('init populated communities', D.communities.length===2, D.communities.length);
+
   await D.apply();
   console.log('CITY MODE:', D.mode, '| total:', D.total, '| badge:', el('count-badge').textContent);
   console.log('  KPI count:', el('k-count').textContent, '| cost:', el('k-cost').textContent, '| avg dti:', el('k-dti').textContent, '| completion:', el('k-comp').textContent);
   console.log('  year chart pts:', D.charts.year.data.labels.length, '| comm bubbles:', D.stats.comms.length);
-  console.log('  table rendered:', /<tbody>/.test(el('tbl').innerHTML), '| locked cards:', el('card-costh').classList._s.has('locked'));
+  console.log('  table rendered:', /<tbody>/.test(el('tbl').innerHTML), '| renov locked:', el('card-renov').classList._s.has('locked'));
   console.log('  insights:', (el('insights').innerHTML.match(/class="insight"/g)||[]).length);
+  check('city mode selected', D.mode==='city', D.mode);
+  check('city total', D.total===490787, D.total);
+  check('city count badge', digits(el('count-badge').textContent)==='490787', el('count-badge').textContent);
+  check('city KPI count', digits(el('k-count').textContent)==='490787', el('k-count').textContent);
+  check('city KPI total cost', el('k-cost').textContent==='$31.00B', el('k-cost').textContent);
+  check('city KPI avg days-to-issue', el('k-dti').textContent==='24', el('k-dti').textContent);
+  check('city KPI completion rate', el('k-comp').textContent==='95%', el('k-comp').textContent);
+  check('city year chart points', D.charts.year.data.labels.length===2, D.charts.year.data.labels.length);
+  check('city community bubbles', D.stats.comms.length===2, D.stats.comms.length);
+  check('city table rendered', /<tbody>/.test(el('tbl').innerHTML));
+  check('renov card locked in city mode', el('card-renov').classList._s.has('locked')===true);
+  check('city insights generated', (el('insights').innerHTML.match(/class="insight"/g)||[]).length>=5);
+
   // drill into community -> detail mode
   el('f-comm').value='HARVEST HILLS';
   await D.apply();
   console.log('DETAIL MODE:', D.mode, '| total:', D.total, '| rows:', D.rows.length);
   console.log('  KPI median cost:', el('k-med').textContent, '| median dti:', el('k-dti').textContent);
-  console.log('  renov lags:', D.renovLags.length, '| unlocked:', !el('card-costh').classList._s.has('locked'));
+  console.log('  renov lags:', D.renovLags.length, '| unlocked:', !el('card-renov').classList._s.has('locked'));
   console.log('  cost hist sum:', D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0));
-  console.log('  table rendered:', /<tbody>/.test(el('tbl').innerHTML));
+  check('detail mode selected', D.mode==='detail', D.mode);
+  check('detail total', D.total===1480, D.total);
+  check('detail rows loaded', D.rows.length===1480, D.rows.length);
+  check('detail median cost formatted', /^\$[\d.]+[KMB]?$/.test(el('k-med').textContent), el('k-med').textContent);
+  check('detail median days-to-issue', el('k-dti').textContent==='3', el('k-dti').textContent);
+  check('renov card unlocked in detail mode', el('card-renov').classList._s.has('locked')===false);
+  check('detail cost histogram sums to rows', D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0)===1480, D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0));
+  check('detail table rendered', /<tbody>/.test(el('tbl').innerHTML));
+
   // sort + page in detail mode
   D.sort('estprojectcost'); D.page(1);
   console.log('  pg-info after sort/page:', el('pg-info').textContent);
-  console.log('  err shown:', el('err').style.display==='block'?el('err').textContent:'none');
+  check('detail pagination after sort+page', /^26\D?50 of 1\D?480$/.test(el('pg-info').textContent), el('pg-info').textContent);
+
+  // empty-results pagination text
+  D.total=0; D.pgUpdate(0,0);
+  check('empty pagination shows No results', el('pg-info').textContent==='No results', el('pg-info').textContent);
+
+  // race-condition guard: overlapping applies must settle on the LAST filter.
+  // The first (city) call has a far longer fetch chain than the second (detail) call,
+  // so WITHOUT the seq guard the superseded city call renders LAST and k-count shows
+  // 490,787. WITH the guard it bails before rendering, leaving the detail value (1,480).
+  el('f-comm').value=''; const p1=D.apply();          // -> city (490,787)
+  el('f-comm').value='HARVEST HILLS'; const p2=D.apply(); // -> detail (1,480)
+  await Promise.all([p1,p2]);
+  console.log('OVERLAP: final mode:', D.mode, '| total:', D.total, '| k-count:', el('k-count').textContent, '| stats.head.n:', D.stats&&D.stats.head&&D.stats.head.n);
+  check('overlapping applies settle on last filter (mode)', D.mode==='detail', D.mode);
+  check('overlapping applies settle on last filter (total)', D.total===1480, D.total);
+  check('overlapping applies — superseded city render suppressed (k-count)', digits(el('k-count').textContent)==='1480', el('k-count').textContent);
+  check('overlapping applies — stats reflect last filter', D.stats&&D.stats.head&&D.stats.head.n===1480, D.stats&&D.stats.head&&D.stats.head.n);
+
+  console.log('  err shown:', el('err').classList._s.has('show')?el('err-text').textContent:'none');
+  check('no error surfaced', !el('err').classList._s.has('show'));
   console.log('fetches made:', fetchLog.length);
+
+  console.log(`\n${passes} passed, ${failures} failed`);
+  if(failures) process.exit(1);
 })().catch(e=>{console.error('HARNESS FAIL:',e);process.exit(1);});

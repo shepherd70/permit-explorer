@@ -346,7 +346,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
     <section class="card" id="card-map">
       <div class="card-head"><h3>Where permits are</h3><span class="hint" id="map-hint">— bubbles per community, sized by permit count; click a bubble to drill in</span></div>
-      <div id="map"></div>
+      <div id="map" role="region" aria-label="Map of building permit locations"></div>
       <div class="map-legend" id="map-legend"></div>
     </section>
 
@@ -383,12 +383,15 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
     </section>
 
     <section class="card">
-      <div class="card-head"><h3>Permit records</h3><span class="hint" id="tbl-hint">— click a column header to sort</span></div>
+      <div class="card-head">
+        <h3>Permit records</h3><span class="hint" id="tbl-hint">— click a column header to sort</span>
+        <button id="export-btn" class="btn btn-ghost" type="button" style="margin-left:auto" onclick="D.exportCsv()" title="Download the permits in the current filter as a CSV file">Export CSV</button>
+      </div>
       <div class="tbl-wrap" id="tbl"></div>
       <div class="pg">
         <span class="pg-info" id="pg-info"></span>
-        <button id="pg-prev" onclick="D.page(-1)">&larr; Prev</button>
-        <button id="pg-next" onclick="D.page(1)">Next &rarr;</button>
+        <button id="pg-prev" aria-label="Previous page" onclick="D.page(-1)">&larr; Prev</button>
+        <button id="pg-next" aria-label="Next page" onclick="D.page(1)">Next &rarr;</button>
       </div>
     </section>
   </div>
@@ -439,10 +442,16 @@ function applyChartDefaults(){
   tt.borderColor='rgba(255,255,255,.12)'; tt.borderWidth=1; tt.padding=10; tt.cornerRadius=8; tt.boxPadding=4; tt.usePointStyle=true;
 }
 
-async function soql(params){
+const isAbort = e => !!e && (e.name==='AbortError' || e.code===20);
+
+async function soql(params,signal){
   const qs = Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
-  const r = await fetch(`${API}?${qs}`);
-  if(!r.ok) throw new Error(`API ${r.status}: ${(await r.text()).slice(0,200)}`);
+  const r = await fetch(`${API}?${qs}`, signal?{signal}:undefined);
+  if(!r.ok){
+    let body=''; try{ body=(await r.text()).slice(0,500); }catch(e){}
+    if(r.status===429) throw new Error(`Calgary's open-data service is rate-limiting requests (HTTP 429). Please wait a few seconds and try again.`);
+    throw new Error(`API ${r.status}: ${body||r.statusText}`);
+  }
   return r.json();
 }
 
@@ -463,6 +472,7 @@ const D = {
   sortCol:'applieddate', sortDir:'desc',
   stats:null, rows:null, renovLags:[], communities:[],
   charts:{}, map:null, layer:null, tileLayer:null, _busy:0,
+  _seq:0, _ac:null, _tblSeq:0, _acTbl:null,
 
   busy(on){ this._busy+=on?1:-1; document.getElementById('loading').classList.toggle('on',this._busy>0); },
   error(msg){ const e=document.getElementById('err'); document.getElementById('err-text').textContent='Couldn’t load data: '+msg; e.classList.add('show'); },
@@ -483,6 +493,11 @@ const D = {
   qParam(){ const q=this.val('f-q'); return q?{q}:{}; },
 
   async init(){
+    if(typeof Chart==='undefined' || typeof L==='undefined'){
+      document.getElementById('first-load').style.display='none';
+      this.error('A required library (charts or maps) failed to load. This is usually a dropped internet connection or a content/ad blocker. Please reload the page or allow scripts from jsdelivr.net and unpkg.com.');
+      return;
+    }
     this.buildCharts(); this.buildMap();
     const tb=document.getElementById('theme-toggle'); if(tb&&tb.setAttribute) tb.setAttribute('aria-pressed', isDark()?'true':'false');
     this.busy(true);
@@ -506,6 +521,7 @@ const D = {
       document.getElementById('last-updated').textContent=new Date().toLocaleString();
     }catch(e){ this.error(e.message); }
     this.busy(false);
+    this.readURL();
     this.apply();
   },
 
@@ -517,6 +533,30 @@ const D = {
     this.apply();
   },
 
+  // --- shareable filter state in the URL query string ---
+  readURL(){
+    if(typeof location==='undefined' || typeof URLSearchParams==='undefined') return;
+    let p; try{ p=new URLSearchParams(location.search); }catch(e){ return; }
+    const setSel=(id,val)=>{ const el=document.getElementById(id); for(const o of el.options){ if(String(o.value)===val){ el.value=val; return; } } };
+    if(p.has('y1')) setSel('f-y1',p.get('y1'));
+    if(p.has('y2')) setSel('f-y2',p.get('y2'));
+    if(p.has('comm')) document.getElementById('f-comm').value=p.get('comm');
+    ['cls','work','status'].forEach(k=>{ if(p.has(k)) setSel('f-'+k,p.get(k)); });
+    if(p.has('q')) document.getElementById('f-q').value=p.get('q');
+  },
+  writeURL(){
+    if(typeof location==='undefined' || typeof history==='undefined' || !history.replaceState || typeof URLSearchParams==='undefined') return;
+    const p=new URLSearchParams();
+    const y1=document.getElementById('f-y1'), y2=document.getElementById('f-y2');
+    if(y1.options.length && y1.value!==y1.options[0].value) p.set('y1',y1.value);
+    if(y2.options.length && y2.value!==y2.options[y2.options.length-1].value) p.set('y2',y2.value);
+    const comm=document.getElementById('f-comm').value.trim(); if(comm) p.set('comm',comm);
+    ['cls','work','status'].forEach(k=>{ const v=document.getElementById('f-'+k).value; if(v && v!=='all') p.set(k,v); });
+    const q=document.getElementById('f-q').value.trim(); if(q) p.set('q',q);
+    const qs=p.toString();
+    try{ history.replaceState(null,'', location.pathname+(qs?('?'+qs):'')+(location.hash||'')); }catch(e){}
+  },
+
   example(kind){
     if(kind==='communities'){ this.reset(); this._scrollTo('card-map'); }
     else if(kind==='speed'){ this._scrollTo('card-speed'); }
@@ -525,32 +565,41 @@ const D = {
   _scrollTo(id){ const el=document.getElementById(id); if(el&&el.scrollIntoView){ try{el.scrollIntoView({behavior:'smooth',block:'start'});}catch(e){} } },
 
   async apply(){
-    this.clearError(); this.pageNum=0; this.busy(true);
+    this.clearError(); this.pageNum=0; this.writeURL();
+    const seq = ++this._seq;
+    if(this._ac){ try{ this._ac.abort(); }catch(e){} }
+    const ac = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    this._ac = ac; const signal = ac && ac.signal;
+    this.busy(true);
     try{
       const where=this.where(), q=this.qParam();
-      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', ...(where?{where}:{}) , ...q});
+      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', ...(where?{where}:{}) , ...q}, signal);
+      if(seq!==this._seq) return;                 // a newer filter change superseded this one
       this.total = +head[0].n||0;
-      if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0]);
-      else await this.enterCity(where,q,head[0]);
-    }catch(e){ this.error(e.message); }
-    document.getElementById('first-load').style.display='none';
-    this.busy(false);
+      if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0],seq,signal);
+      else await this.enterCity(where,q,head[0],seq,signal);
+    }catch(e){ if(!isAbort(e) && seq===this._seq) this.error(e.message); }
+    finally{
+      if(seq===this._seq){ document.getElementById('first-load').style.display='none'; this._ac=null; }
+      this.busy(false);
+    }
   },
 
-  async enterCity(where,q,head){
-    this.mode='city'; this.rows=null; this.renovLags=[];
+  async enterCity(where,q,head,seq,signal){
     const W = w => { const conds=[w,where].filter(Boolean).join(' AND '); return conds?{where:conds}:{}; };
     const [yr, cls, work, month, contr, status, comms, costh, dtih] = await Promise.all([
-      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}),
-      soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}),
-      soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}),
-      soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}),
-      soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}),
-      soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}),
-      soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}),
-      soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}).catch(()=>null),
-      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}).catch(()=>null)
+      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
+      soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}, signal),
+      soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}, signal),
+      soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
+      soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
+      soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
+      soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
+      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
+    if(seq!=null && seq!==this._seq) return;       // superseded while loading
+    this.mode='city'; this.rows=null; this.renovLags=[];
     this.stats = {
       yr: yr.filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d})),
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
@@ -564,10 +613,11 @@ const D = {
     await this.cityTable();
   },
 
-  async enterDetail(where,q,head){
-    this.mode='detail';
+  async enterDetail(where,q,head,seq,signal){
     const fields='permitnum,statuscurrent,applieddate,issueddate,permittype,permitclass,permitclassgroup,workclass,description,contractorname,housingunits,estprojectcost,originaladdress,communityname,latitude,longitude';
-    const raw = await soql({select:fields, limit:String(DETAIL_THRESHOLD), order:'applieddate DESC', ...(where?{where}:{}), ...this.qParam()});
+    const raw = await soql({select:fields, limit:String(DETAIL_THRESHOLD), order:'applieddate DESC', ...(where?{where}:{}), ...this.qParam()}, signal);
+    if(seq!=null && seq!==this._seq) return;       // superseded while loading
+    this.mode='detail';
     this.rows = raw.map(r=>({
       id:r.permitnum, status:r.statuscurrent||'Unknown',
       applied:r.applieddate?r.applieddate.slice(0,10):null,
@@ -817,25 +867,32 @@ const D = {
   },
   pgUpdate(shown,total){
     const np=Math.max(1,Math.ceil(total/this.pageSize));
-    document.getElementById('pg-info').textContent=`${total?this.pageNum*this.pageSize+1:0}–${Math.min((this.pageNum+1)*this.pageSize,total)} of ${fmtN(total)}`;
+    document.getElementById('pg-info').textContent = total
+      ? `${this.pageNum*this.pageSize+1}–${Math.min((this.pageNum+1)*this.pageSize,total)} of ${fmtN(total)}`
+      : 'No results';
     document.getElementById('pg-prev').disabled=this.pageNum<=0;
     document.getElementById('pg-next').disabled=this.pageNum>=np-1;
   },
 
   async cityTable(){
+    const seq = ++this._tblSeq;
+    if(this._acTbl){ try{ this._acTbl.abort(); }catch(e){} }
+    const ac = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    this._acTbl = ac; const signal = ac && ac.signal;
     this.busy(true);
     try{
       const where=this.where();
       const raw=await soql({select:'permitnum,statuscurrent,applieddate,permitclassgroup,workclass,description,contractorname,estprojectcost,originaladdress,communityname',
         limit:String(this.pageSize), offset:String(this.pageNum*this.pageSize),
-        order:`${this.sortCol} ${this.sortDir.toUpperCase()}`, ...(where?{where}:{}), ...this.qParam()});
+        order:`${this.sortCol} ${this.sortDir.toUpperCase()}`, ...(where?{where}:{}), ...this.qParam()}, signal);
+      if(seq!==this._tblSeq) return;               // a newer sort/page/filter superseded this fetch
       const list=raw.map(r=>({id:r.permitnum,status:r.statuscurrent||'Unknown',applied:r.applieddate?r.applieddate.slice(0,10):null,
         community:r.communityname,cls:r.permitclassgroup||'—',work:r.workclass||'—',cost:r.estprojectcost==null?null:+r.estprojectcost,
         contractor:r.contractorname,addr:r.originaladdress,desc:r.description}));
       document.getElementById('tbl').innerHTML=this.rowsHtml(list);
       this.pgUpdate(list.length,this.total);
-    }catch(e){ this.error(e.message); }
-    this.busy(false);
+    }catch(e){ if(!isAbort(e) && seq===this._tblSeq) this.error(e.message); }
+    finally{ if(seq===this._tblSeq) this._acTbl=null; this.busy(false); }
   },
 
   detailTable(){
@@ -851,6 +908,36 @@ const D = {
     this.pageNum=Math.min(Math.max(0,this.pageNum),np-1);
     document.getElementById('tbl').innerHTML=this.rowsHtml(sorted.slice(this.pageNum*this.pageSize,(this.pageNum+1)*this.pageSize));
     this.pgUpdate(this.pageSize,sorted.length);
+  },
+
+  // --- CSV export of the current filtered selection ---
+  csvCell(v){ if(v==null)v=''; v=String(v); return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; },
+  exportCsv(){
+    if(this.total===0){ return; }
+    const stamp=new Date().toISOString().slice(0,10);
+    const fname=`calgary-permits-${stamp}.csv`;
+    if(this.mode==='detail' && this.rows){
+      // detail mode already holds every row in scope — build the file client-side
+      const head=this.COLS.map(c=>this.csvCell(c.l)).join(',');
+      const body=this.rows.map(r=>this.COLS.map(c=>this.csvCell(r[c.df])).join(',')).join('\r\n');
+      const blob=new Blob([head+'\r\n'+body],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download=fname; document.body.appendChild(a); a.click();
+      setTimeout(()=>{ try{URL.revokeObjectURL(url);}catch(e){} a.remove(); },0);
+      return;
+    }
+    // city mode: too many rows to hold in memory — stream from Socrata's CSV endpoint (capped, newest first)
+    const CAP=50000;
+    if(this.total>CAP && typeof alert!=='undefined'){
+      alert(`This selection has ${fmtN(this.total)} permits; the export will include the ${fmtN(CAP)} most recent. Narrow the filters for a complete export.`);
+    }
+    const where=this.where(), q=this.qParam();
+    const params={ select:'permitnum,applieddate,statuscurrent,communityname,permitclassgroup,workclass,estprojectcost,contractorname,originaladdress,description',
+      order:`${this.sortCol} ${this.sortDir.toUpperCase()}`, limit:String(CAP) };
+    if(where) params.where=where; if(q.q) params.q=q.q;
+    const qs=Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
+    const a=document.createElement('a'); a.href=`https://data.calgary.ca/resource/c2es-76ed.csv?${qs}`;
+    a.download=fname; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
   }
 };
 
