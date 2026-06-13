@@ -67,7 +67,8 @@ eval(src+'\nglobalThis.D=D;');
   console.log('  insights:', (el('insights').innerHTML.match(/class="insight"/g)||[]).length);
   check('city mode selected', D.mode==='city', D.mode);
   check('city total', D.total===490787, D.total);
-  check('city count badge', digits(el('count-badge').textContent)==='490787', el('count-badge').textContent);
+  // the city explorer sets count-badge via innerHTML (a <span> wrapper), so read innerHTML
+  check('city count badge', digits(el('count-badge').innerHTML)==='490787', el('count-badge').innerHTML);
   check('city KPI count', digits(el('k-count').textContent)==='490787', el('k-count').textContent);
   check('city KPI total cost', el('k-cost').textContent==='$31.00B', el('k-cost').textContent);
   check('city KPI avg days-to-issue', el('k-dti').textContent==='24', el('k-dti').textContent);

@@ -40,14 +40,17 @@ console.log('years:', g.ys.join(','));
 console.log('2019:', g.counts[g.ys.indexOf(2019)], 'permits,', g.costs[g.ys.indexOf(2019)], 'cost');
 check('groupYear returns years', g.ys.length>0, g.ys.length);
 
+// count-badge reads "<count> of <total> permits" — take just the count before " of "
+const badgeCount = ()=>+digits(el('count-badge').textContent.split(' of ')[0]);
 el('f-cls').value='Garage'; D.apply();
 console.log('Garage:', el('count-badge').textContent);
-const garageN = +digits(el('count-badge').textContent);
+const garageN = badgeCount();
 check('Garage filter narrows the set', garageN>0 && garageN<1498, garageN);
 
 el('f-cls').value='all'; el('f-q').value='cedarglen'; D.apply();
 console.log('cedarglen:', el('count-badge').textContent);
-check('text search returns matches', +digits(el('count-badge').textContent)>0, el('count-badge').textContent);
+const cedarN = badgeCount();
+check('text search returns matches', cedarN>0 && cedarN<1498, cedarN);
 
 el('f-q').value=''; D.apply();
 D.sort('cost');
