@@ -21,7 +21,18 @@ share it by sending the file.
 - Leaflet map with points sized by cost and colored by permit class
 - Sortable, paginated permit table
 
-## Usage
+## Two dashboards
+
+1. **City-wide explorer** (`dist/city_explorer.html`) — just open it in a browser
+   (needs internet). Queries Calgary's open-data API live: all 490K+ permits,
+   every community, always current. Aggregated city view (including cost and
+   days-to-issue distributions via server-side binning); filter to under
+   30,000 permits (a community, or one year city-wide) to unlock
+   permit-level detail, renovation lifecycle, and individual map points.
+2. **Offline single-community dashboard** (`dist/permit_dashboard.html`) —
+   self-contained file built from a CSV export; works without internet.
+
+## Usage (offline dashboard)
 
 ```bash
 pip install pandas
@@ -39,9 +50,10 @@ Download a fresh export from Calgary's open-data portal, drop it in
 ## Project layout
 
 ```
-build.py            build script: CSV -> dist/permit_dashboard.html
-src/template.html   dashboard UI (HTML/CSS/JS, __DATA__ placeholder)
-data/raw/           raw CSV exports (input)
-dist/               built dashboards (output, generated)
-TASKS.md            development task tracker
+build.py                build script: CSV -> dist/permit_dashboard.html
+src/template.html       offline dashboard UI (HTML/CSS/JS, __DATA__ placeholder)
+src/city_explorer.html  city-wide live-API explorer (no build step; copied to dist/)
+data/raw/               raw CSV exports (input)
+dist/                   dashboards (open these in a browser)
+TASKS.md                development task tracker
 ```
