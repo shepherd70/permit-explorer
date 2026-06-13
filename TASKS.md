@@ -10,9 +10,10 @@ Status values: `todo` | `in-progress` | `done` | `dropped`
 | 4 | Headless verification harness (Node, DOM stubs) | done | KPIs cross-checked against pandas; harness lives in session scratchpad — consider committing |
 | 5 | Set up repo (local C:\dev\permit-explorer + GitHub remote) | done | Private repo github.com/shepherd70/permit-explorer; main + session branch pushed |
 | 6 | Commit verification harness as `test/harness.js` | todo | Port from scratchpad; stub quirks documented in session notes |
-| 7 | Support other communities / city-wide exports | todo | Map center & title are currently Harvest Hills-specific; derive from data |
+| 7 | Support other communities / city-wide exports | done | src/city_explorer.html: live API explorer, all 490K+ permits, community/type/status filters |
 | 8 | $/sqft analysis | dropped | No permit in current export has both cost and TotalSqFt |
 
 ## Log
 
 - 2026-06-12 — Dashboard built and verified; deep-dive analytics added; repo created.
+- 2026-06-12 — City-wide live-API explorer added: aggregate city mode + permit-level detail mode (<8K scope), community bubble map with drill-down, community/class/work/status filters.

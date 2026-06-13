@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calgary Building Permits Explorer — City-Wide</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+:root{
+  --bg:#f4f6f9;--card:#fff;--header:#15243b;--text:#212529;--muted:#6c757d;
+  --c1:#4C72B0;--c2:#DD8452;--c3:#55A868;--c4:#C44E52;--c5:#8172B3;--c6:#937860;--c7:#DA8BC3;--c8:#8C8C8C;
+  --pos:#28a745;--neg:#dc3545;--gap:14px;--radius:10px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.5}
+.wrap{max-width:1440px;margin:0 auto;padding:var(--gap)}
+header{background:var(--header);color:#fff;padding:18px 22px;border-radius:var(--radius);margin-bottom:var(--gap)}
+header h1{font-size:20px;font-weight:650}
+header .sub{font-size:12.5px;color:rgba(255,255,255,.65);margin-top:2px}
+.filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:14px}
+.fg{display:flex;flex-direction:column;gap:3px}
+.fg label{font-size:11px;color:rgba(255,255,255,.65);text-transform:uppercase;letter-spacing:.5px}
+.fg select,.fg input{padding:6px 9px;border:1px solid rgba(255,255,255,.25);border-radius:6px;background:rgba(255,255,255,.1);color:#fff;font-size:13px;min-width:110px}
+.fg select option{background:var(--header)}
+.fg input::placeholder{color:rgba(255,255,255,.45)}
+button.reset{padding:7px 14px;border:1px solid rgba(255,255,255,.3);border-radius:6px;background:transparent;color:#fff;font-size:13px;cursor:pointer}
+button.reset:hover{background:rgba(255,255,255,.12)}
+.count-badge{margin-left:auto;font-size:13px;color:rgba(255,255,255,.85);align-self:center;text-align:right}
+.mode{display:inline-block;padding:2px 10px;border-radius:999px;font-size:11.5px;font-weight:600;margin-top:3px}
+.mode.city{background:#2a5db0;color:#fff}
+.mode.detail{background:#1e7e34;color:#fff}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:var(--gap);margin-bottom:var(--gap)}
+.kpi{background:var(--card);border-radius:var(--radius);padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+.kpi .lbl{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.kpi .val{font-size:26px;font-weight:700;margin-top:2px}
+.kpi .note{font-size:12px;color:var(--muted);margin-top:1px}
+.grid{display:grid;gap:var(--gap);margin-bottom:var(--gap)}
+.grid.two{grid-template-columns:1fr 1fr}
+.grid.three{grid-template-columns:1fr 1fr 1fr}
+.card{background:var(--card);border-radius:var(--radius);padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,.07);position:relative}
+.card h3{font-size:13.5px;font-weight:650;margin-bottom:12px}
+.card h3 .hint{font-weight:400;color:var(--muted);font-size:12px}
+.ch{position:relative;height:280px}
+.ch.tall{height:340px}
+#map{height:480px;border-radius:8px;z-index:0}
+.insights{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.insight{background:#f8f9fb;border-left:3px solid var(--c1);border-radius:6px;padding:10px 14px;font-size:13px}
+.insight b{color:var(--header)}
+.tbl-wrap{overflow-x:auto;min-height:200px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{text-align:left;padding:9px 10px;border-bottom:2px solid #dee2e6;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;cursor:pointer;user-select:none}
+thead th:hover{color:var(--text);background:#f6f7f9}
+tbody td{padding:8px 10px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+tbody tr:hover{background:#f6f8fb}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.pg{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;font-size:13px;color:var(--muted)}
+.pg button{padding:4px 10px;border:1px solid #d6dae0;border-radius:5px;background:#fff;cursor:pointer;font-size:13px}
+.pg button:disabled{opacity:.4;cursor:default}
+footer{text-align:center;font-size:12px;color:var(--muted);padding:8px 0 16px}
+.desc-cell{max-width:340px}
+.overlay{position:absolute;inset:0;background:rgba(255,255,255,.85);display:none;align-items:center;justify-content:center;border-radius:var(--radius);z-index:5;font-size:13px;color:var(--muted);text-align:center;padding:20px}
+.card.locked .overlay{display:flex}
+.loading-bar{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,#4C72B0,#55A868,#DD8452);background-size:200% 100%;animation:slide 1.2s linear infinite;z-index:1000;display:none}
+.loading-bar.on{display:block}
+@keyframes slide{0%{background-position:0 0}100%{background-position:200% 0}}
+.err{background:#fdeaea;color:#b02a37;border-radius:6px;padding:10px 14px;font-size:13px;margin-bottom:var(--gap);display:none}
+@media(max-width:900px){.grid.two,.grid.three{grid-template-columns:1fr}.count-badge{margin-left:0}}
+@media print{.filters{display:none}body{background:#fff}}
+</style>
+</head>
+<body>
+<div class="loading-bar" id="loading"></div>
+<div class="wrap">
+<header>
+  <h1>Calgary Building Permits Explorer</h1>
+  <div class="sub">City-wide &middot; live from data.calgary.ca (dataset c2es-76ed) &middot; filters update every metric, chart, map element and table row</div>
+  <div class="filters">
+    <div class="fg"><label>From year</label><select id="f-y1" onchange="D.apply()"></select></div>
+    <div class="fg"><label>To year</label><select id="f-y2" onchange="D.apply()"></select></div>
+    <div class="fg"><label>Community</label><input id="f-comm" list="comm-list" placeholder="All communities" onchange="D.apply()" style="min-width:180px"><datalist id="comm-list"></datalist></div>
+    <div class="fg"><label>Permit class</label><select id="f-cls" onchange="D.apply()"><option value="all">All classes</option></select></div>
+    <div class="fg"><label>Work type</label><select id="f-work" onchange="D.apply()"><option value="all">All work</option></select></div>
+    <div class="fg"><label>Status</label><select id="f-status" onchange="D.apply()"><option value="all">All statuses</option></select></div>
+    <div class="fg"><label>Search</label><input id="f-q" placeholder="address, contractor, keyword…" onchange="D.apply()"></div>
+    <button class="reset" onclick="D.reset()">Reset</button>
+    <span class="count-badge"><span id="count-badge">loading…</span><br><span class="mode city" id="mode-badge">city mode</span></span>
+  </div>
+</header>
+
+<div class="err" id="err"></div>
+
+<section class="kpis">
+  <div class="kpi"><div class="lbl">Permits</div><div class="val" id="k-count">–</div><div class="note" id="k-count-n"></div></div>
+  <div class="kpi"><div class="lbl">Total est. cost</div><div class="val" id="k-cost">–</div><div class="note" id="k-cost-n"></div></div>
+  <div class="kpi"><div class="lbl" id="k-med-l">Avg project cost</div><div class="val" id="k-med">–</div><div class="note" id="k-med-n"></div></div>
+  <div class="kpi"><div class="lbl">Housing units</div><div class="val" id="k-units">–</div><div class="note">added by these permits</div></div>
+  <div class="kpi"><div class="lbl" id="k-dti-l">Avg days to issue</div><div class="val" id="k-dti">–</div><div class="note" id="k-dti-n"></div></div>
+  <div class="kpi"><div class="lbl">Completion rate</div><div class="val" id="k-comp">–</div><div class="note" id="k-comp-n"></div></div>
+</section>
+
+<section class="card" style="margin-bottom:var(--gap)">
+  <h3>Map <span class="hint" id="map-hint">— bubbles per community, sized by permit count; click a bubble to drill in</span></h3>
+  <div id="map"></div>
+</section>
+
+<section class="card" style="margin-bottom:var(--gap)">
+  <h3>Permit volume &amp; estimated construction value by year <span class="hint">— bars: permits applied; line: total est. cost</span></h3>
+  <div class="ch tall"><canvas id="c-year"></canvas></div>
+</section>
+
+<section class="grid three">
+  <div class="card"><h3>What gets built <span class="hint">— by permit class</span></h3><div class="ch"><canvas id="c-cls"></canvas></div></div>
+  <div class="card"><h3>Type of work</h3><div class="ch"><canvas id="c-work"></canvas></div></div>
+  <div class="card"><h3>Seasonality <span class="hint">— applications by month</span></h3><div class="ch"><canvas id="c-month"></canvas></div></div>
+</section>
+
+<section class="grid two">
+  <div class="card"><h3>Top contractors <span class="hint">— by permit count</span></h3><div class="ch"><canvas id="c-contr"></canvas></div></div>
+  <div class="card"><h3>Permit processing speed <span class="hint">— avg days applied&rarr;issued, by year</span></h3><div class="ch"><canvas id="c-speed"></canvas></div></div>
+</section>
+
+<section class="card" style="margin-bottom:var(--gap)">
+  <h3>Cumulative buildout <span class="hint">— cumulative permits &amp; housing units over time</span></h3>
+  <div class="ch"><canvas id="c-cum"></canvas></div>
+</section>
+
+<section class="grid three">
+  <div class="card" id="card-costh"><h3>Project cost distribution</h3><div class="ch"><canvas id="c-costh"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 8,000 permits</div></div>
+  <div class="card" id="card-dtih"><h3>Days-to-issue distribution</h3><div class="ch"><canvas id="c-dtih"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 8,000 permits</div></div>
+  <div class="card" id="card-renov"><h3>Renovation lifecycle <span class="hint">— years from new build to first renovation</span></h3><div class="ch"><canvas id="c-renov"></canvas></div><div class="overlay">Available in detail mode —<br>filter to under 8,000 permits</div></div>
+</section>
+
+<section class="card" style="margin-bottom:var(--gap)">
+  <h3>Auto-computed insights <span class="hint">— recalculated for the current filter</span></h3>
+  <div class="insights" id="insights"></div>
+</section>
+
+<section class="card">
+  <h3>Permit records <span class="hint" id="tbl-hint">— click a column header to sort</span></h3>
+  <div class="tbl-wrap" id="tbl"></div>
+  <div class="pg">
+    <span id="pg-info"></span>
+    <button id="pg-prev" onclick="D.page(-1)">&larr; Prev</button>
+    <button id="pg-next" onclick="D.page(1)">Next &rarr;</button>
+  </div>
+</section>
+
+<footer>Live dashboard &middot; data: City of Calgary open data (c2es-76ed), queried on view &middot; requires internet</footer>
+</div>
+<script>
+const API = 'https://data.calgary.ca/resource/c2es-76ed.json';
+const DETAIL_THRESHOLD = 8000;
+const COLORS = ['#4C72B0','#DD8452','#55A868','#C44E52','#8172B3','#937860','#DA8BC3','#8C8C8C','#CCB974','#64B5CD'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const STATUS_COLORS = {'Completed':['#e6f4ea','#1e7e34'],'Issued Permit':['#e7f0fb','#2a5db0'],'Cancelled':['#fdeaea','#b02a37'],'Expired':['#fff3cd','#856404'],'Hold':['#fde2cf','#a4521a'],'In Review':['#ece7f6','#5e4b8b'],'File Closed':['#eceff1','#546e7a']};
+const COST_BINS=[{l:'<$5K',max:5e3},{l:'$5–10K',max:1e4},{l:'$10–25K',max:25e3},{l:'$25–50K',max:5e4},{l:'$50–100K',max:1e5},{l:'$100–250K',max:25e4},{l:'$250K–1M',max:1e6},{l:'$1M+',max:Infinity}];
+const DTI_BINS=[{l:'0–1 d',max:1},{l:'2–3 d',max:3},{l:'4–7 d',max:7},{l:'8–14 d',max:14},{l:'15–30 d',max:30},{l:'31–90 d',max:90},{l:'90+ d',max:Infinity}];
+
+const fmt$ = v => v==null||isNaN(v)?'—':(Math.abs(v)>=1e9?'$'+(v/1e9).toFixed(2)+'B':Math.abs(v)>=1e6?'$'+(v/1e6).toFixed(2)+'M':Math.abs(v)>=1e3?'$'+(v/1e3).toFixed(0)+'K':'$'+Math.round(v).toLocaleString());
+const fmtN = v => v==null||isNaN(v)?'—':Math.round(v).toLocaleString();
+const median = a => {if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+const binCounts=(vals,bins)=>{const out=bins.map(()=>0);vals.forEach(v=>{for(let i=0;i<bins.length;i++){if(v<=bins[i].max){out[i]++;break;}}});return out;};
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const sq=s=>String(s).replace(/'/g,"''");
+
+async function soql(params){
+  const qs = Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
+  const r = await fetch(`${API}?${qs}`);
+  if(!r.ok) throw new Error(`API ${r.status}: ${(await r.text()).slice(0,200)}`);
+  return r.json();
+}
+
+const D = {
+  mode:'city', pageNum:0, pageSize:25, total:0,
+  sortCol:'applieddate', sortDir:'desc',
+  stats:null, rows:null, renovLags:[], communities:[],
+  charts:{}, map:null, layer:null, _busy:0,
+
+  busy(on){ this._busy+=on?1:-1; document.getElementById('loading').classList.toggle('on',this._busy>0); },
+  error(msg){ const e=document.getElementById('err'); e.textContent='Data load problem: '+msg; e.style.display='block'; },
+  clearError(){ document.getElementById('err').style.display='none'; },
+  val(id){const v=document.getElementById(id).value;return v==='all'||v===''?null:v;},
+
+  where(){
+    const w=[];
+    const y1=this.val('f-y1'), y2=this.val('f-y2');
+    if(y1) w.push(`applieddate >= '${y1}-01-01T00:00:00'`);
+    if(y2) w.push(`applieddate <= '${y2}-12-31T23:59:59'`);
+    const comm=this.val('f-comm'); if(comm) w.push(`upper(communityname) = '${sq(comm.toUpperCase())}'`);
+    const cls=this.val('f-cls'); if(cls) w.push(`permitclassgroup = '${sq(cls)}'`);
+    const work=this.val('f-work'); if(work) w.push(`workclass = '${sq(work)}'`);
+    const st=this.val('f-status'); if(st) w.push(`statuscurrent = '${sq(st)}'`);
+    return w.join(' AND ');
+  },
+  qParam(){ const q=this.val('f-q'); return q?{q}:{}; },
+
+  async init(){
+    this.buildCharts(); this.buildMap();
+    this.busy(true);
+    try{
+      const [years, comms, classes, works, statuses] = await Promise.all([
+        soql({select:'date_extract_y(applieddate) as k, count(1) as n', group:'k', order:'k'}),
+        soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', where:'communityname IS NOT NULL', group:'k', order:'n DESC', limit:'500'}),
+        soql({select:'permitclassgroup as k, count(1) as n', where:'permitclassgroup IS NOT NULL', group:'k', order:'n DESC'}),
+        soql({select:'workclass as k, count(1) as n', where:'workclass IS NOT NULL', group:'k', order:'n DESC'}),
+        soql({select:'statuscurrent as k, count(1) as n', where:'statuscurrent IS NOT NULL', group:'k', order:'n DESC'})
+      ]);
+      const ys = years.map(r=>+r.k).filter(y=>y>=1980&&y<=2100).sort((a,b)=>a-b);
+      const y1=document.getElementById('f-y1'), y2=document.getElementById('f-y2');
+      ys.forEach(y=>{y1.add(new Option(y,y));y2.add(new Option(y,y));});
+      y1.value=ys[0]; y2.value=ys[ys.length-1];
+      this.communities = comms.map(r=>({name:r.k, n:+r.n, lat:+r.lat, lng:+r.lng, cost:+r.c||0}));
+      const dl=document.getElementById('comm-list');
+      this.communities.forEach(c=>{const o=document.createElement('option');o.value=c.name;dl.appendChild(o);});
+      const fill=(id,list)=>{const sel=document.getElementById(id);list.forEach(r=>sel.add(new Option(`${r.k} (${(+r.n).toLocaleString()})`,r.k)));};
+      fill('f-cls',classes); fill('f-work',works); fill('f-status',statuses);
+    }catch(e){ this.error(e.message); }
+    this.busy(false);
+    this.apply();
+  },
+
+  reset(){
+    ['f-cls','f-work','f-status'].forEach(id=>document.getElementById(id).value='all');
+    document.getElementById('f-comm').value=''; document.getElementById('f-q').value='';
+    const y1=document.getElementById('f-y1'),y2=document.getElementById('f-y2');
+    y1.value=y1.options[0].value; y2.value=y2.options[y2.options.length-1].value;
+    this.apply();
+  },
+
+  async apply(){
+    this.clearError(); this.pageNum=0; this.busy(true);
+    try{
+      const where=this.where(), q=this.qParam();
+      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', ...(where?{where}:{}) , ...q});
+      this.total = +head[0].n||0;
+      if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0]);
+      else await this.enterCity(where,q,head[0]);
+    }catch(e){ this.error(e.message); }
+    this.busy(false);
+  },
+
+  async enterCity(where,q,head){
+    this.mode='city'; this.rows=null; this.renovLags=[];
+    const W = w => { const conds=[w,where].filter(Boolean).join(' AND '); return conds?{where:conds}:{}; };
+    const [yr, cls, work, month, contr, status, comms] = await Promise.all([
+      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}),
+      soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}),
+      soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}),
+      soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}),
+      soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}),
+      soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}),
+      soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q})
+    ]);
+    this.stats = {
+      yr: yr.filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d})),
+      cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
+      month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
+      contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
+      comms: comms.map(r=>({name:r.k,n:+r.n,lat:+r.lat,lng:+r.lng,cost:+r.c||0})),
+      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d}
+    };
+    this.render();
+    await this.cityTable();
+  },
+
+  async enterDetail(where,q,head){
+    this.mode='detail';
+    const fields='permitnum,statuscurrent,applieddate,issueddate,permittype,permitclass,permitclassgroup,workclass,description,contractorname,housingunits,estprojectcost,originaladdress,communityname,latitude,longitude';
+    const raw = await soql({select:fields, limit:String(DETAIL_THRESHOLD), order:'applieddate DESC', ...(where?{where}:{}), ...this.qParam()});
+    this.rows = raw.map(r=>({
+      id:r.permitnum, status:r.statuscurrent||'Unknown',
+      applied:r.applieddate?r.applieddate.slice(0,10):null,
+      year:r.applieddate?+r.applieddate.slice(0,4):null,
+      month:r.applieddate?+r.applieddate.slice(5,7)-1:null,
+      dti:(r.applieddate&&r.issueddate)?Math.max(0,Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,
+      type:r.permittype, cls:r.permitclassgroup||'Unspecified', clsDetail:r.permitclass,
+      work:r.workclass||'Unspecified', desc:r.description,
+      contractor:r.contractorname, units:+r.housingunits||0,
+      cost:r.estprojectcost==null?null:+r.estprojectcost,
+      addr:r.originaladdress, community:r.communityname,
+      lat:r.latitude==null?null:+r.latitude, lng:r.longitude==null?null:+r.longitude
+    }));
+    const f=this.rows;
+    const g={};
+    f.forEach(d=>{if(d.year==null)return;g[d.year]=g[d.year]||{n:0,c:0,u:0,ds:[]};const e=g[d.year];e.n++;e.c+=d.cost||0;e.u+=d.units;if(d.dti!=null)e.ds.push(d.dti);});
+    const top=(field,lim)=>{const m={};f.forEach(d=>{const v=d[field];if(!v)return;m[v]=(m[v]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,lim);};
+    const mo=Array(12).fill(0);f.forEach(d=>{if(d.month!=null)mo[d.month]++;});
+    const commMap={};f.forEach(d=>{if(!d.community||d.lat==null)return;const e=commMap[d.community]=commMap[d.community]||{n:0,cost:0,lat:0,lng:0};e.n++;e.cost+=d.cost||0;e.lat+=d.lat;e.lng+=d.lng;});
+    this.stats = {
+      yr:Object.keys(g).map(Number).sort((a,b)=>a-b).map(k=>({k,n:g[k].n,c:g[k].c,u:g[k].u,d:median(g[k].ds)})),
+      cls:top('cls',9), work:top('work',8), month:mo, contr:top('contractor',10),
+      status:top('status',20),
+      comms:Object.entries(commMap).map(([name,e])=>({name,n:e.n,cost:e.cost,lat:e.lat/e.n,lng:e.lng/e.n})),
+      head:{n:f.length, c:f.reduce((s,d)=>s+(d.cost||0),0), u:f.reduce((s,d)=>s+d.units,0), d:median(f.map(d=>d.dti).filter(v=>v!=null))}
+    };
+    // renovation pairs within scope
+    const byAddr={};
+    f.forEach(d=>{if(!d.addr||!d.applied)return;(byAddr[d.addr]=byAddr[d.addr]||[]).push(d);});
+    this.renovLags=[];
+    Object.values(byAddr).forEach(list=>{
+      const news=list.filter(d=>d.work==='New').sort((a,b)=>a.applied<b.applied?-1:1);
+      if(!news.length)return;
+      const built=news[0].applied;
+      const imps=list.filter(d=>d.work!=='New'&&d.work!=='Demolition'&&d.applied>built).sort((a,b)=>a.applied<b.applied?-1:1);
+      if(imps.length)this.renovLags.push((new Date(imps[0].applied)-new Date(built))/(365.25*864e5));
+    });
+    this.render();
+    this.detailTable();
+  },
+
+  render(){
+    const s=this.stats, detail=this.mode==='detail';
+    document.getElementById('mode-badge').textContent = detail?'detail mode — permit-level data':'city mode — aggregated';
+    document.getElementById('mode-badge').className = 'mode '+(detail?'detail':'city');
+    document.getElementById('count-badge').textContent = `${fmtN(this.total)} permits in scope`;
+    ['card-costh','card-dtih','card-renov'].forEach(id=>document.getElementById(id).classList.toggle('locked',!detail));
+    // KPIs
+    const h=s.head;
+    document.getElementById('k-count').textContent=fmtN(h.n);
+    document.getElementById('k-cost').textContent=fmt$(h.c);
+    document.getElementById('k-cost-n').textContent='estimated project cost';
+    document.getElementById('k-units').textContent=fmtN(h.u);
+    if(detail){
+      const costs=this.rows.map(d=>d.cost).filter(v=>v!=null);
+      document.getElementById('k-med-l').textContent='Median project cost';
+      document.getElementById('k-med').textContent=fmt$(median(costs));
+      document.getElementById('k-med-n').textContent=costs.length?`max ${fmt$(Math.max(...costs))}`:'';
+      document.getElementById('k-dti-l').textContent='Median days to issue';
+      document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
+      const newPct=this.rows.length?this.rows.filter(d=>d.work==='New').length/this.rows.length*100:0;
+      document.getElementById('k-count-n').textContent=`${newPct.toFixed(0)}% new construction`;
+      document.getElementById('k-dti-n').textContent='';
+    }else{
+      document.getElementById('k-med-l').textContent='Avg project cost';
+      document.getElementById('k-med').textContent=h.n?fmt$(h.c/h.n):'—';
+      document.getElementById('k-med-n').textContent='median needs detail mode';
+      document.getElementById('k-dti-l').textContent='Avg days to issue';
+      document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
+      document.getElementById('k-dti-n').textContent='';
+      const nw=s.work.find(w=>w[0]==='New');
+      document.getElementById('k-count-n').textContent=nw&&h.n?`${(nw[1]/h.n*100).toFixed(0)}% new construction`:'';
+    }
+    const done=(s.status.find(x=>x[0]==='Completed')||[null,0])[1];
+    const open=['In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'];
+    const resolved=s.status.filter(x=>!open.includes(x[0])).reduce((a,x)=>a+x[1],0);
+    document.getElementById('k-comp').textContent=resolved?`${(done/resolved*100).toFixed(0)}%`:'—';
+    document.getElementById('k-comp-n').textContent=`${fmtN(done)} completed`;
+    // charts
+    const set=(ch,labels,...data)=>{ch.data.labels=labels;data.forEach((d,i)=>ch.data.datasets[i].data=d);ch.update('none');};
+    set(this.charts.year,s.yr.map(r=>r.k),s.yr.map(r=>r.n),s.yr.map(r=>r.c));
+    set(this.charts.cls,s.cls.map(c=>c[0]),s.cls.map(c=>c[1]));
+    set(this.charts.work,s.work.map(c=>c[0]),s.work.map(c=>c[1]));
+    set(this.charts.month,MONTHS,s.month);
+    set(this.charts.contr,s.contr.map(c=>String(c[0]).length>26?String(c[0]).slice(0,25)+'…':c[0]),s.contr.map(c=>c[1]));
+    set(this.charts.speed,s.yr.map(r=>r.k),s.yr.map(r=>r.d));
+    let cp=0,cu=0;
+    set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n),s.yr.map(r=>cu+=r.u));
+    if(detail){
+      set(this.charts.costh,COST_BINS.map(b=>b.l),binCounts(this.rows.map(d=>d.cost).filter(v=>v!=null),COST_BINS));
+      set(this.charts.dtih,DTI_BINS.map(b=>b.l),binCounts(this.rows.map(d=>d.dti).filter(v=>v!=null),DTI_BINS));
+      const maxLag=15,rl=Array(maxLag+1).fill(0);
+      this.renovLags.forEach(v=>rl[Math.min(Math.floor(v),maxLag)]++);
+      set(this.charts.renov,rl.map((_,i)=>i<maxLag?`${i}–${i+1}`:`${maxLag}+`),rl);
+    }
+    this.updateMap(); this.insights();
+  },
+
+  buildCharts(){
+    const base={responsive:true,maintainAspectRatio:false,animation:false};
+    this.charts.year=new Chart(document.getElementById('c-year'),{data:{labels:[],datasets:[
+      {type:'bar',label:'Permits',data:[],backgroundColor:'#4C72B0CC',borderRadius:3,yAxisID:'y',order:2},
+      {type:'line',label:'Est. cost',data:[],borderColor:'#DD8452',backgroundColor:'#DD845230',borderWidth:2,tension:.3,pointRadius:3,yAxisID:'y1',order:1}
+    ]},options:{...base,interaction:{mode:'index',intersect:false},plugins:{tooltip:{callbacks:{label:c=>c.dataset.label==='Est. cost'?` Est. cost: ${fmt$(c.parsed.y)}`:` Permits: ${fmtN(c.parsed.y)}`}}},
+      scales:{y:{beginAtZero:true,title:{display:true,text:'permits'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>fmt$(v)}}}}});
+    this.charts.cls=new Chart(document.getElementById('c-cls'),{type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:COLORS,borderColor:'#fff',borderWidth:2}]},
+      options:{...base,cutout:'58%',plugins:{legend:{position:'right',labels:{usePointStyle:true,boxWidth:8,font:{size:11}}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((a,b)=>a+b,0);return ` ${c.label}: ${fmtN(c.parsed)} (${(c.parsed/t*100).toFixed(1)}%)`;}}}}}});
+    this.charts.work=new Chart(document.getElementById('c-work'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:COLORS.map(c=>c+'CC'),borderRadius:4}]},
+      options:{...base,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+    this.charts.month=new Chart(document.getElementById('c-month'),{type:'bar',data:{labels:MONTHS,datasets:[{data:[],backgroundColor:'#55A868CC',borderRadius:3}]},
+      options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    this.charts.contr=new Chart(document.getElementById('c-contr'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:'#8172B3CC',borderRadius:4}]},
+      options:{...base,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
+    this.charts.speed=new Chart(document.getElementById('c-speed'),{type:'line',data:{labels:[],datasets:[{label:'Days',data:[],borderColor:'#C44E52',backgroundColor:'#C44E5225',borderWidth:2,tension:.3,fill:true,pointRadius:3,spanGaps:true}]},
+      options:{...base,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y==null?'—':c.parsed.y.toFixed(0)} days`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'days'}}}}});
+    this.charts.cum=new Chart(document.getElementById('c-cum'),{type:'line',data:{labels:[],datasets:[
+      {label:'Cumulative permits',data:[],borderColor:'#4C72B0',backgroundColor:'#4C72B025',borderWidth:2,tension:.2,fill:true,pointRadius:2,yAxisID:'y'},
+      {label:'Cumulative housing units',data:[],borderColor:'#55A868',borderWidth:2,tension:.2,fill:false,pointRadius:2,yAxisID:'y1'}
+    ]},options:{...base,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top',labels:{usePointStyle:true,boxWidth:8}}},
+      scales:{y:{beginAtZero:true,title:{display:true,text:'permits'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'units'}}}}});
+    this.charts.costh=new Chart(document.getElementById('c-costh'),{type:'bar',data:{labels:COST_BINS.map(b=>b.l),datasets:[{data:[],backgroundColor:'#DD8452CC',borderRadius:3}]},
+      options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    this.charts.dtih=new Chart(document.getElementById('c-dtih'),{type:'bar',data:{labels:DTI_BINS.map(b=>b.l),datasets:[{data:[],backgroundColor:'#4C72B0CC',borderRadius:3}]},
+      options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    this.charts.renov=new Chart(document.getElementById('c-renov'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:'#8172B3CC',borderRadius:3}]},
+      options:{...base,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'years until first renovation'}},y:{beginAtZero:true}}}});
+  },
+
+  buildMap(){
+    this.map=L.map('map',{preferCanvas:true}).setView([51.05,-114.07],10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap contributors',maxZoom:19}).addTo(this.map);
+    this.layer=L.layerGroup().addTo(this.map);
+    this.clsColor={};
+  },
+  clsColorFor(c){ if(!(c in this.clsColor)) this.clsColor[c]=COLORS[Object.keys(this.clsColor).length%COLORS.length]; return this.clsColor[c]; },
+  updateMap(){
+    this.layer.clearLayers();
+    if(this.mode==='detail'&&this.rows){
+      document.getElementById('map-hint').textContent='— individual permits, colored by permit class; click a point for details';
+      const pts=[];
+      this.rows.forEach(d=>{
+        if(d.lat==null||!isFinite(d.lat))return; pts.push([d.lat,d.lng]);
+        L.circleMarker([d.lat,d.lng],{radius:d.cost?Math.min(11,3+Math.log10(Math.max(d.cost,100))):4,weight:1,color:'#fff',fillColor:this.clsColorFor(d.cls),fillOpacity:.78})
+          .bindPopup(`<b>${esc(d.id)}</b> · ${esc(d.status)}<br>${esc(d.addr)} · ${esc(d.community)}<br>${esc(d.cls)} — ${esc(d.work)}<br>${esc((d.desc||'').slice(0,120))}<br><b>${fmt$(d.cost)}</b>${d.contractor?' · '+esc(d.contractor):''}<br>Applied ${d.applied||'—'}`)
+          .addTo(this.layer);
+      });
+      if(pts.length)this.map.fitBounds(pts,{padding:[20,20],maxZoom:16});
+    }else if(this.stats){
+      document.getElementById('map-hint').textContent='— bubbles per community, sized by permit count; click a bubble to drill in';
+      const maxN=Math.max(...this.stats.comms.map(c=>c.n),1);
+      this.stats.comms.forEach(c=>{
+        if(!isFinite(c.lat)||!isFinite(c.lng))return;
+        L.circleMarker([c.lat,c.lng],{radius:4+24*Math.sqrt(c.n/maxN),weight:1,color:'#fff',fillColor:'#4C72B0',fillOpacity:.6})
+          .bindPopup(`<b>${esc(c.name)}</b><br>${fmtN(c.n)} permits · ${fmt$(c.cost)}<br><a href="#" onclick="D.drill('${esc(c.name).replace(/'/g,"\\'")}');return false;">Drill into this community →</a>`)
+          .addTo(this.layer);
+      });
+      this.map.setView([51.05,-114.07],10);
+    }
+  },
+  drill(name){ document.getElementById('f-comm').value=name; this.map.closePopup(); this.apply(); },
+
+  insights(){
+    const s=this.stats,out=[];
+    if(s&&s.head.n){
+      if(s.yr.length>1){
+        const by=[...s.yr].sort((a,b)=>b.n-a.n)[0];
+        out.push(`Busiest year: <b>${by.k}</b> with <b>${fmtN(by.n)}</b> permit applications.`);
+        const bc=[...s.yr].sort((a,b)=>b.c-a.c)[0];
+        out.push(`Peak construction value: <b>${bc.k}</b> at <b>${fmt$(bc.c)}</b>.`);
+      }
+      if(s.contr.length)out.push(`Most active contractor: <b>${esc(s.contr[0][0])}</b> with <b>${fmtN(s.contr[0][1])}</b> permits.`);
+      const mMax=s.month.indexOf(Math.max(...s.month));
+      out.push(`Seasonal pattern: applications peak in <b>${MONTHS[mMax]}</b> (${fmtN(s.month[mMax])}).`);
+      if(this.mode==='city'&&s.comms.length>1)out.push(`Most active community in scope: <b>${esc(s.comms[0].name)}</b> with <b>${fmtN(s.comms[0].n)}</b> permits (${fmt$(s.comms[0].cost)}).`);
+      const canc=(s.status.find(x=>x[0]==='Cancelled')||[null,0])[1];
+      if(canc)out.push(`<b>${fmtN(canc)}</b> permits (${(canc/s.head.n*100).toFixed(1)}%) were cancelled.`);
+      if(this.mode==='detail'){
+        const big=this.rows.filter(d=>d.cost!=null).sort((a,b)=>b.cost-a.cost)[0];
+        if(big)out.push(`Largest project: <b>${fmt$(big.cost)}</b> — ${esc((big.desc||big.cls).slice(0,80))} (${esc(big.id)}, ${big.year}).`);
+        if(this.renovLags.length>5)out.push(`Renovation lifecycle: <b>${this.renovLags.length}</b> buildings renovated after a new build — median <b>${median(this.renovLags).toFixed(1)} years</b> later.`);
+        const costs=this.rows.map(d=>d.cost).filter(v=>v!=null).sort((a,b)=>b-a);
+        if(costs.length>20){
+          const tot=costs.reduce((a,b)=>a+b,0),n10=Math.ceil(costs.length*.1);
+          out.push(`Cost concentration: the top <b>10%</b> of projects account for <b>${(costs.slice(0,n10).reduce((a,b)=>a+b,0)/tot*100).toFixed(0)}%</b> of estimated value.`);
+        }
+      }else{
+        out.push(`Filter down to under <b>${fmtN(DETAIL_THRESHOLD)}</b> permits (pick a community, class, or short year range) to unlock distributions, renovation lifecycle, and the permit-point map.`);
+      }
+    } else out.push('No permits match the current filters.');
+    document.getElementById('insights').innerHTML=out.map(t=>`<div class="insight">${t}</div>`).join('');
+  },
+
+  COLS:[
+    {f:'permitnum',df:'id',l:'Permit #'},{f:'applieddate',df:'applied',l:'Applied'},{f:'statuscurrent',df:'status',l:'Status'},
+    {f:'communityname',df:'community',l:'Community'},{f:'permitclassgroup',df:'cls',l:'Class'},{f:'workclass',df:'work',l:'Work'},
+    {f:'estprojectcost',df:'cost',l:'Est. Cost',num:1},{f:'contractorname',df:'contractor',l:'Contractor'},
+    {f:'originaladdress',df:'addr',l:'Address'},{f:'description',df:'desc',l:'Description'}
+  ],
+  sort(f){ if(this.sortCol===f)this.sortDir=this.sortDir==='asc'?'desc':'asc'; else{this.sortCol=f;this.sortDir='desc';} this.pageNum=0; this.mode==='city'?this.cityTable():this.detailTable(); },
+  page(d){ this.pageNum+=d; this.mode==='city'?this.cityTable():this.detailTable(); },
+
+  rowsHtml(list){
+    let h='<table><thead><tr>';
+    this.COLS.forEach(c=>{const ar=this.sortCol===c.f?(this.sortDir==='asc'?' ▲':' ▼'):'';h+=`<th onclick="D.sort('${c.f}')">${c.l}${ar}</th>`;});
+    h+='</tr></thead><tbody>';
+    list.forEach(d=>{
+      const stc=STATUS_COLORS[d.status]||['#eceff1','#546e7a'];
+      h+=`<tr><td style="white-space:nowrap">${esc(d.id)}</td><td style="white-space:nowrap">${d.applied||'—'}</td>`+
+        `<td><span class="pill" style="background:${stc[0]};color:${stc[1]}">${esc(d.status)}</span></td>`+
+        `<td>${esc(d.community)||'—'}</td><td>${esc(d.cls)}</td><td>${esc(d.work)}</td><td class="num">${fmt$(d.cost)}</td>`+
+        `<td>${esc(d.contractor)||'—'}</td><td>${esc(d.addr)||'—'}</td>`+
+        `<td class="desc-cell">${d.desc?esc(d.desc.length>110?d.desc.slice(0,108)+'…':d.desc):'—'}</td></tr>`;
+    });
+    return h+'</tbody></table>';
+  },
+  pgUpdate(shown,total){
+    const np=Math.max(1,Math.ceil(total/this.pageSize));
+    document.getElementById('pg-info').textContent=`${total?this.pageNum*this.pageSize+1:0}–${Math.min((this.pageNum+1)*this.pageSize,total)} of ${fmtN(total)}`;
+    document.getElementById('pg-prev').disabled=this.pageNum<=0;
+    document.getElementById('pg-next').disabled=this.pageNum>=np-1;
+  },
+
+  async cityTable(){
+    this.busy(true);
+    try{
+      const where=this.where();
+      const raw=await soql({select:'permitnum,statuscurrent,applieddate,permitclassgroup,workclass,description,contractorname,estprojectcost,originaladdress,communityname',
+        limit:String(this.pageSize), offset:String(this.pageNum*this.pageSize),
+        order:`${this.sortCol} ${this.sortDir.toUpperCase()}`, ...(where?{where}:{}), ...this.qParam()});
+      const list=raw.map(r=>({id:r.permitnum,status:r.statuscurrent||'Unknown',applied:r.applieddate?r.applieddate.slice(0,10):null,
+        community:r.communityname,cls:r.permitclassgroup||'—',work:r.workclass||'—',cost:r.estprojectcost==null?null:+r.estprojectcost,
+        contractor:r.contractorname,addr:r.originaladdress,desc:r.description}));
+      document.getElementById('tbl').innerHTML=this.rowsHtml(list);
+      this.pgUpdate(list.length,this.total);
+    }catch(e){ this.error(e.message); }
+    this.busy(false);
+  },
+
+  detailTable(){
+    const dfMap={}; this.COLS.forEach(c=>dfMap[c.f]=c.df);
+    const sc=dfMap[this.sortCol]||'applied', dir=this.sortDir==='asc'?1:-1;
+    const sorted=[...this.rows].sort((a,b)=>{
+      let x=a[sc],y=b[sc];
+      if(x==null)return 1; if(y==null)return -1;
+      if(typeof x==='string'){x=x.toLowerCase();y=String(y).toLowerCase();}
+      return x<y?-dir:x>y?dir:0;
+    });
+    const np=Math.max(1,Math.ceil(sorted.length/this.pageSize));
+    this.pageNum=Math.min(Math.max(0,this.pageNum),np-1);
+    document.getElementById('tbl').innerHTML=this.rowsHtml(sorted.slice(this.pageNum*this.pageSize,(this.pageNum+1)*this.pageSize));
+    this.pgUpdate(this.pageSize,sorted.length);
+  }
+};
+D.init();
+</script>
+</body>
+</html>
