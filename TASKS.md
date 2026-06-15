@@ -10,8 +10,13 @@ Status values: `todo` | `in-progress` | `done` | `dropped`
 | 4 | Headless verification harness (Node, DOM stubs) | done | KPIs cross-checked against pandas; committed under test/ (see #6) |
 | 5 | Set up repo (local C:\dev\permit-explorer + GitHub remote) | done | Private repo github.com/shepherd70/permit-explorer; main + session branch pushed |
 | 6 | Commit verification harness as `test/harness.js` | done | test/harness.js + test/city_harness.js, self-extracting from the HTML; run with node |
-| 7 | Support other communities / city-wide exports | done | src/city_explorer.html: live API explorer, all 490K+ permits, community/type/status filters |
+| 7 | City-wide live API + community drill-down | done | src/city_explorer.html: live API explorer, all 490K+ permits, community/type/status filters |
 | 8 | $/sqft analysis | dropped | No permit in current export has both cost and TotalSqFt |
+| 9 | Harden city explorer: request-race guard | done | AbortController + per-request generation token in apply()/enterCity/enterDetail/cityTable so rapid filter/sort changes can't render stale data |
+| 10 | Shareable URL filters + CSV export | done | Filters encoded in URL query string (read on load, written on apply); Export CSV button (client-side in detail mode, Socrata `.csv` endpoint capped at 50K in city mode) |
+| 11 | Resilience & a11y polish | done | CDN-failure guard, 429 rate-limit message, empty-state pagination text, map region label, paginator aria-labels |
+| 12 | Real test assertions + CI | done | Harnesses now assert (exit non-zero on failure) incl. a race-condition regression test; package.json `npm test`; GitHub Actions CI |
+| 13 | Ship infra: LICENSE + Pages deploy | done | MIT LICENSE w/ Calgary data attribution; .github/workflows/pages.yml publishes explorer as site root |
 
 ## Log
 
@@ -20,3 +25,4 @@ Status values: `todo` | `in-progress` | `done` | `dropped`
 - 2026-06-12 — Cost & days-to-issue distributions now work city-wide via server-side case() binning; detail threshold raised 8K -> 30K (any single year city-wide now unlocks detail mode).
 - 2026-06-12 — Session closed: harnesses committed under test/; PR opened session/2026-06-12-repo-setup → main.
 - 2026-06-13 — Redesigned src/city_explorer.html into a public-facing tool: hero + example questions, "how it works" disclosure, restyled toolbar/KPIs/cards/table, Okabe-Ito colourblind-safe chart palette, CARTO light/dark basemap, map legend, intentional loading/empty/error states, dark-mode toggle, accessibility (skip link, focus states, keyboard-sortable headers, reduced-motion). Live API, all filters, city/detail logic, and city_harness.js all preserved. Synced to dist/.
+- 2026-06-13 — "Harden & ship v1.0" pass (tasks #9–13): fixed the request-race in the live explorer (AbortController + generation tokens); added shareable URL filters and CSV export; CDN-failure guard, 429 message, empty-state pagination, map/paginator a11y; rewrote both harnesses as real assertions (incl. an overlapping-apply race test) with `npm test`; added GitHub Actions CI + Pages deploy; added MIT LICENSE with Calgary data attribution; README updated (hosting, testing, data/license sections, clarified scope). Two survey findings were verified as false positives and skipped: detail-mode never truncates at 30K (it's only entered when total ≤ 30K), and the year dropdowns are already data-driven.
