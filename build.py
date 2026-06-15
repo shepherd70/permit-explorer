@@ -10,7 +10,6 @@ Usage:
 Requires: pandas (pip install pandas)
 """
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -30,14 +29,33 @@ def find_csv() -> Path:
     return csvs[-1]
 
 
-def clean(s):
-    if pd.isna(s):
-        return None
-    return re.sub(r"\s+", " ", str(s)).strip()
+# Columns referenced below — read only these instead of the whole CSV.
+USECOLS = [
+    "PermitNum", "StatusCurrent", "AppliedDate", "IssuedDate", "CompletedDate",
+    "PermitType", "PermitClassGroup", "PermitClass", "WorkClass", "Description",
+    "ContractorName", "HousingUnits", "EstProjectCost", "TotalSqFt",
+    "OriginalAddress", "CommunityName", "Latitude", "Longitude",
+]
+
+# text fields -> the source column to clean()
+_TEXT_COLS = {
+    "status": "StatusCurrent", "type": "PermitType", "cls": "PermitClassGroup",
+    "clsDetail": "PermitClass", "work": "WorkClass", "desc": "Description",
+    "contractor": "ContractorName", "addr": "OriginalAddress",
+    "community": "CommunityName",
+}
+_DATE_COLS = {"applied": "AppliedDate", "issued": "IssuedDate", "completed": "CompletedDate"}
+
+
+def clean_col(s: pd.Series) -> pd.Series:
+    """Vectorized equivalent of the old per-cell clean(): collapse internal
+    whitespace and strip, mapping missing values to None."""
+    cleaned = s.astype(str).str.replace(r"\s+", " ", regex=True).str.strip()
+    return cleaned.where(s.notna(), None)
 
 
 def load(src: Path) -> list[dict]:
-    df = pd.read_csv(src)
+    df = pd.read_csv(src, usecols=USECOLS)
     df["cost"] = pd.to_numeric(df["EstProjectCost"].str.replace(r"[\$,]", "", regex=True), errors="coerce")
     df["sqft"] = pd.to_numeric(df["TotalSqFt"], errors="coerce")
     df["units"] = pd.to_numeric(df["HousingUnits"], errors="coerce").fillna(0).astype(int)
@@ -49,29 +67,44 @@ def load(src: Path) -> list[dict]:
     df.loc[df["daysToIssue"] < 0, "daysToIssue"] = None
     df.loc[df["daysToComplete"] < 0, "daysToComplete"] = None
 
+    # Do the per-cell work the old iterrows loop did — clean() on every text
+    # column, strftime() on every date — once per column (vectorized), then
+    # assemble records from native-Python column lists. No per-row Series.
+    text = {k: clean_col(df[col]).tolist() for k, col in _TEXT_COLS.items()}
+    dates = {k: df[col].dt.strftime("%Y-%m-%d").where(df[col].notna(), None).tolist()
+             for k, col in _DATE_COLS.items()}
+    pid = df["PermitNum"].tolist()
+    units = df["units"].tolist()
+    cost = df["cost"].tolist()
+    sqft = df["sqft"].tolist()
+    lat = df["Latitude"].tolist()
+    lng = df["Longitude"].tolist()
+    dti = df["daysToIssue"].tolist()
+    dtc = df["daysToComplete"].tolist()
+
     rows = []
-    for _, r in df.iterrows():
+    for i in range(len(df)):
         rows.append({
-            "id": r["PermitNum"],
-            "status": clean(r["StatusCurrent"]),
-            "applied": r["AppliedDate"].strftime("%Y-%m-%d") if pd.notna(r["AppliedDate"]) else None,
-            "issued": r["IssuedDate"].strftime("%Y-%m-%d") if pd.notna(r["IssuedDate"]) else None,
-            "completed": r["CompletedDate"].strftime("%Y-%m-%d") if pd.notna(r["CompletedDate"]) else None,
-            "type": clean(r["PermitType"]),
-            "cls": clean(r["PermitClassGroup"]) or "Unspecified",
-            "clsDetail": clean(r["PermitClass"]),
-            "work": clean(r["WorkClass"]) or "Unspecified",
-            "desc": clean(r["Description"]),
-            "contractor": clean(r["ContractorName"]),
-            "units": int(r["units"]),
-            "cost": None if pd.isna(r["cost"]) else round(float(r["cost"])),
-            "sqft": None if pd.isna(r["sqft"]) else round(float(r["sqft"])),
-            "addr": clean(r["OriginalAddress"]),
-            "community": clean(r["CommunityName"]),
-            "lat": round(float(r["Latitude"]), 6) if pd.notna(r["Latitude"]) else None,
-            "lng": round(float(r["Longitude"]), 6) if pd.notna(r["Longitude"]) else None,
-            "dti": None if pd.isna(r["daysToIssue"]) else int(r["daysToIssue"]),
-            "dtc": None if pd.isna(r["daysToComplete"]) else int(r["daysToComplete"]),
+            "id": pid[i],
+            "status": text["status"][i],
+            "applied": dates["applied"][i],
+            "issued": dates["issued"][i],
+            "completed": dates["completed"][i],
+            "type": text["type"][i],
+            "cls": text["cls"][i] or "Unspecified",
+            "clsDetail": text["clsDetail"][i],
+            "work": text["work"][i] or "Unspecified",
+            "desc": text["desc"][i],
+            "contractor": text["contractor"][i],
+            "units": int(units[i]),
+            "cost": None if pd.isna(cost[i]) else round(float(cost[i])),
+            "sqft": None if pd.isna(sqft[i]) else round(float(sqft[i])),
+            "addr": text["addr"][i],
+            "community": text["community"][i],
+            "lat": round(float(lat[i]), 6) if pd.notna(lat[i]) else None,
+            "lng": round(float(lng[i]), 6) if pd.notna(lng[i]) else None,
+            "dti": None if pd.isna(dti[i]) else int(dti[i]),
+            "dtc": None if pd.isna(dtc[i]) else int(dtc[i]),
         })
     return rows
 
