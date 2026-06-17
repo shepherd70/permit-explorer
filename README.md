@@ -54,12 +54,14 @@ Download a fresh export from Calgary's open-data portal, drop it in
 
 ## Hosting the city-wide explorer
 
+**Live at <https://shepherd70.github.io/permit-explorer/>.**
+
 `src/city_explorer.html` is a static file that talks to the live API, so it can
-be hosted anywhere. A GitHub Pages workflow (`.github/workflows/pages.yml`) is
-included that publishes it as the site root (`index.html`) alongside the offline
-dashboard. To enable it: **Settings → Pages → Source: GitHub Actions**, then push
-to `main`. Note that GitHub Pages on a *private* repo requires a paid plan — make
-the repo public to host it for free.
+be hosted anywhere. A GitHub Pages workflow (`.github/workflows/pages.yml`)
+publishes it as the site root (`index.html`) alongside the offline dashboard and
+redeploys on every push to `main`. Pages is configured with **Settings → Pages →
+Source: GitHub Actions**; serving Pages from a *private* repo would need a paid
+plan, so this repo is public.
 
 ## Testing
 
