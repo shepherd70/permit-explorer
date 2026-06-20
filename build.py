@@ -9,7 +9,9 @@ Usage:
 
 Requires: pandas (pip install pandas)
 """
+import datetime
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -27,6 +29,20 @@ def find_csv() -> Path:
     if not csvs:
         sys.exit("No CSV found in data/raw/ and none given on the command line.")
     return csvs[-1]
+
+
+def export_date(src: Path) -> str:
+    """Snapshot date for the embedded data, as an ISO date string. Parsed from
+    an 8-digit YYYYMMDD in the filename (Calgary's export naming, e.g.
+    Building_Permits_20260612.csv), falling back to the file's mod
+    time so the 'data as of' date is always derived, never hand-maintained."""
+    m = re.search(r"(20\d{2})(\d{2})(\d{2})", src.name)
+    if m:
+        try:
+            return datetime.date(int(m[1]), int(m[2]), int(m[3])).isoformat()
+        except ValueError:
+            pass
+    return datetime.date.fromtimestamp(src.stat().st_mtime).isoformat()
 
 
 # Columns referenced below — read only these instead of the whole CSV.
@@ -113,11 +129,29 @@ def main():
     src = find_csv()
     rows = load(src)
     data = json.dumps(rows, separators=(",", ":")).replace("</", "<\\/")
+
+    # Build-time freshness metadata so the header/footer can never go stale.
+    years = [int(r["applied"][:4]) for r in rows if r["applied"]]
+    coverage = f"{min(years)}&ndash;{max(years)}" if years else "n/a"
+    as_of = export_date(src)
+    fname = src.name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    footer = (f"Self-contained dashboard &middot; {len(rows):,} permits from {fname} "
+              f"&middot; data as of {as_of} &middot; the live city-wide explorer is always current")
+
     tpl = TEMPLATE.read_text(encoding="utf-8")
-    assert "__DATA__" in tpl, "template missing __DATA__ placeholder"
+    for token in ("__DATA__", "__COVERAGE__", "__FOOTER__"):
+        assert token in tpl, f"template missing {token} placeholder"
+    out = (tpl.replace("__COVERAGE__", coverage)
+              .replace("__FOOTER__", footer)
+              .replace("__DATA__", data))  # data last: never scanned for the small tokens
+
     OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(tpl.replace("__DATA__", data), encoding="utf-8")
-    print(f"Built {OUT} ({OUT.stat().st_size:,} bytes) from {src.name} ({len(rows):,} permits)")
+    # newline="\n" forces LF so a Windows build matches the Linux/CI build byte
+    # for byte — without it, write_text translates to CRLF and every rebuild
+    # churns the whole committed dist file.
+    OUT.write_text(out, encoding="utf-8", newline="\n")
+    print(f"Built {OUT} ({OUT.stat().st_size:,} bytes) from {src.name} "
+          f"({len(rows):,} permits, {coverage.replace('&ndash;', '-')}, data as of {as_of})")
 
 
 if __name__ == "__main__":

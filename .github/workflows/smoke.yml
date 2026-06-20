@@ -1,0 +1,29 @@
+name: API smoke test
+
+# The live city-wide explorer reads Calgary's open-data (Socrata) endpoint
+# directly. The regular CI harnesses only assert against canned responses, so
+# a schema/field/endpoint change at Calgary would break the live site silently.
+# This scheduled job hits the REAL endpoint and fails (emailing the repo owner)
+# if anything the explorer depends on has changed.
+
+on:
+  schedule:
+    - cron: "17 11 * * *" # daily ~11:17 UTC (avoids top-of-hour congestion)
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      - name: Smoke-test the live Socrata API
+        run: node test/smoke.js
