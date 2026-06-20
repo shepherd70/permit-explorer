@@ -16,12 +16,18 @@ global.document={getElementById:el,createElement:()=>({}),body:{appendChild(){},
 global.Chart=class{constructor(c,cfg){this.data=(cfg&&cfg.data)||{labels:[],datasets:[]}}update(){}};
 global.L={map:()=>({setView(){return this},fitBounds(){},closePopup(){},invalidateSize(){}}),tileLayer:()=>({addTo(){}}),
   layerGroup:()=>({addTo(){return this},clearLayers(){}}),
-  circleMarker:()=>({bindPopup(){return this},addTo(){return this}})};
+  circleMarker:()=>({bindPopup(){return this},addTo(){return this}}),
+  geoJSON:(data,opts)=>{ (data&&data.features||[]).forEach(f=>{ if(opts&&opts.style)opts.style(f); if(opts&&opts.onEachFeature)opts.onEachFeature(f,{bindPopup(){return this}}); }); return {addTo(){return this},getBounds(){return {isValid(){return false}}}}; }};
 
 // --- fetch stub: canned Socrata responses ---
 let fetchLog=[];
 global.fetch=async(url)=>{
   fetchLog.push(url);
+  if(String(url).includes('surr-xmvs')||String(url).includes('.geojson')) return {ok:true,status:200,text:async()=>'',json:async()=>({type:'FeatureCollection',features:[
+    {type:'Feature',properties:{name:'HARVEST HILLS'},geometry:{type:'Polygon',coordinates:[[[-114.06,51.14],[-114.05,51.14],[-114.05,51.15],[-114.06,51.14]]]}},
+    {type:'Feature',properties:{name:'DOWNTOWN COMMERCIAL CORE'},geometry:{type:'Polygon',coordinates:[[[-114.07,51.04],[-114.06,51.04],[-114.06,51.05],[-114.07,51.04]]]}},
+    {type:'Feature',properties:{name:'NOWHERE LAND'},geometry:{type:'Polygon',coordinates:[[[-114.0,51.0],[-113.9,51.0],[-113.9,51.1],[-114.0,51.0]]]}}
+  ]})};
   const u=new URL(url); const p=Object.fromEntries(u.searchParams);
   const sel=p['$select']||'', grp=p['$group']||'', where=p['$where']||'';
   const detailScope = where.includes("communityname) = 'HARVEST HILLS'");
@@ -31,7 +37,7 @@ global.fetch=async(url)=>{
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
-  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8'}]);
+  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',d:'23.9',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',d:'20',done:'1400',openn:'40'}]);
   if(grp==='k'&&sel.includes('permitclassgroup')) return json([{k:'Single Family',n:'200000'},{k:'Garage',n:'50000'}]);
   if(grp==='k'&&sel.includes('workclass')) return json([{k:'New',n:'250000'},{k:'Alteration',n:'180000'}]);
   if(grp==='k'&&sel.includes('statuscurrent')) return json([{k:'Completed',n:'400000'},{k:'Cancelled',n:'20000'},{k:'Issued Permit',n:'30000'}]);
@@ -78,6 +84,18 @@ eval(src+'\nglobalThis.D=D;');
   check('city table rendered', /<tbody>/.test(el('tbl').innerHTML));
   check('renov card locked in city mode', el('card-renov').classList._s.has('locked')===true);
   check('city insights generated', (el('insights').innerHTML.match(/class="insight"/g)||[]).length>=5);
+
+  // --- choropleth toggle (community areas) ---
+  D.setChoro(true);                              // kicks an async boundary fetch + re-render
+  await new Promise(r=>setTimeout(r,30));
+  console.log('CHORO: boundaries:', !!D.boundaries, '| features:', D.boundaries&&(D.boundaries.features||[]).length, '| legend:', el('map-legend').innerHTML.slice(0,70));
+  check('choropleth boundaries fetched', !!D.boundaries && (D.boundaries.features||[]).length===3, D.boundaries&&(D.boundaries.features||[]).length);
+  check('choropleth legend (avg cost, gradient)', /lg-grad/.test(el('map-legend').innerHTML) && /Avg project cost/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
+  check('choropleth controls toggled on', el('mv-areas').classList._s.has('on')===true && el('mv-bubbles').classList._s.has('on')===false);
+  D.setChoroMetric('comp');
+  check('choropleth metric switch (completion rate)', /Completion rate/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
+  D.setChoro(false);
+  check('choropleth toggle back to bubbles', /bubble size/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,60));
 
   // drill into community -> detail mode
   el('f-comm').value='HARVEST HILLS';
