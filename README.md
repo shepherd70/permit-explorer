@@ -21,7 +21,10 @@ dashboards share the same analytics:
   renovation-lifecycle analysis (years from new build to first renovation at
   the same address)
 - Auto-computed insights that recalculate for the current filter
-- Leaflet map with points sized by cost and colored by permit class
+- Leaflet map: community bubbles sized by permit count, with a **choropleth
+  toggle** shading communities by avg project cost, avg days-to-issue, or
+  completion rate (colour-blind-safe cividis ramp, boundaries fetched live);
+  permit-level points sized by cost and coloured by class in detail view
 - Sortable, paginated permit table
 
 ## Two dashboards
@@ -33,7 +36,11 @@ dashboards share the same analytics:
    binning); filter to under 30,000 permits (a community, or one year
    city-wide) to unlock permit-level detail, renovation lifecycle, and
    individual map points. Filters are encoded in the URL, so any view can be
-   shared or bookmarked, and the current selection can be exported to CSV.
+   shared or bookmarked, and the current selection can be exported to CSV. The
+   community map switches between proportional **bubbles** (permit count) and a
+   **choropleth** of an intensive metric (avg project cost, avg days-to-issue,
+   or completion rate); boundaries are fetched live, and unmatched or
+   low-sample communities render as no-data.
 2. **Offline single-community dashboard** (`dist/permit_dashboard.html`) —
    self-contained file built from a CSV export; works without internet. It is a
    point-in-time snapshot — the header and footer show the coverage range and

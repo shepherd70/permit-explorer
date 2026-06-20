@@ -182,6 +182,19 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .lg-dot{background:var(--accent);opacity:.6}
 .lg-sm{width:8px;height:8px}.lg-lg{width:16px;height:16px}
 .lg-muted{color:var(--text-3)}
+.lg-grad-wrap{display:inline-flex;align-items:center;gap:7px}
+.lg-grad{width:120px;height:11px;border-radius:3px;display:inline-block;border:1px solid var(--border)}
+.lg-grad-lbl{font-variant-numeric:tabular-nums;color:var(--text-2)}
+.lg-item i.lg-nodata{border-radius:3px;border:1px solid var(--border)}
+/* map display-mode controls */
+.map-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--r-sm);overflow:hidden}
+.seg-btn{appearance:none;-webkit-appearance:none;border:none;background:var(--surface);color:var(--text-2);font:inherit;font-size:12.5px;padding:6px 13px;cursor:pointer;line-height:1.2}
+.seg-btn+.seg-btn{border-left:1px solid var(--border)}
+.seg-btn:hover{color:var(--text);background:var(--surface-2)}
+.seg-btn.on{background:var(--accent);color:#fff}
+.choro-metric{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2)}
+.choro-metric select{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--border-strong);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
 
 /* locked overlay */
 .overlay{position:absolute;inset:0;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(1px);
@@ -346,6 +359,18 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
     <section class="card" id="card-map">
       <div class="card-head"><h3>Where permits are</h3><span class="hint" id="map-hint">— bubbles per community, sized by permit count; click a bubble to drill in</span></div>
+      <div class="map-controls" id="map-controls">
+        <div class="seg" role="group" aria-label="Map display mode">
+          <button type="button" id="mv-bubbles" class="seg-btn on" aria-pressed="true" onclick="D.setChoro(false)">Bubbles</button>
+          <button type="button" id="mv-areas" class="seg-btn" aria-pressed="false" onclick="D.setChoro(true)">Areas</button>
+        </div>
+        <span class="choro-metric" id="choro-metric-wrap" style="display:none"><label for="choro-metric">Shade by</label>
+          <select id="choro-metric" onchange="D.setChoroMetric(this.value)">
+            <option value="cost">Avg project cost</option>
+            <option value="dti">Avg days to issue</option>
+            <option value="comp">Completion rate</option>
+          </select></span>
+      </div>
       <div id="map" role="region" aria-label="Map of building permit locations"></div>
       <div class="map-legend" id="map-legend"></div>
     </section>
@@ -467,12 +492,30 @@ function binsFromGroups(rows,bins){
   return out;
 }
 
+// --- community choropleth: boundary source, colour ramp, intensive metrics ---
+const BOUNDARIES_URL = 'https://data.calgary.ca/resource/surr-xmvs.geojson?$limit=500';
+const CIVIDIS = [[0,34,78],[0,51,106],[44,67,95],[76,83,97],[106,100,98],[137,118,93],[172,139,82],[210,161,61],[255,233,69]];
+function rampColor(t){ // cividis: perceptually uniform, colour-blind- and greyscale-safe
+  if(t==null||isNaN(t)) return null;
+  t=Math.max(0,Math.min(1,t));
+  const x=t*(CIVIDIS.length-1), i=Math.floor(x), f=x-i, a=CIVIDIS[i], b=CIVIDIS[Math.min(i+1,CIVIDIS.length-1)];
+  return `rgb(${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)})`;
+}
+// intensive metrics (no area denominator); all derived from the city community query
+const CHORO_METRICS = {
+  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.n?c.cost/c.n:null, fmt:v=>fmt$(v)},
+  dti: {label:'Avg days to issue', short:'avg days to issue', log:false, minN:5, get:c=>c.dti,             fmt:v=>`${Math.round(v)} d`},
+  comp:{label:'Completion rate',   short:'completion rate',   log:false, minN:5, get:c=>c.comp,            fmt:v=>`${Math.round(v*100)}%`}
+};
+const NODATA_FILL='#d7dde3', NODATA_FILL_DARK='#2b3440';
+
 const D = {
   mode:'city', pageNum:0, pageSize:25, total:0,
   sortCol:'applieddate', sortDir:'desc',
   stats:null, rows:null, renovLags:[], communities:[],
   charts:{}, map:null, layer:null, tileLayer:null, _busy:0,
   _seq:0, _ac:null, _tblSeq:0, _acTbl:null,
+  choro:false, choroMetric:'cost', boundaries:null, _bPromise:null,
 
   busy(on){ this._busy+=on?1:-1; document.getElementById('loading').classList.toggle('on',this._busy>0); },
   error(msg){ const e=document.getElementById('err'); document.getElementById('err-text').textContent='Couldn’t load data: '+msg; e.classList.add('show'); },
@@ -594,7 +637,7 @@ const D = {
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
-      soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(date_diff_d(issueddate,applieddate)) as d, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
       soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
       soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
@@ -605,7 +648,7 @@ const D = {
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
-      comms: comms.map(r=>({name:r.k,n:+r.n,lat:+r.lat,lng:+r.lng,cost:+r.c||0})),
+      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,resolved=n-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null};}),
       costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
       head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d}
     };
@@ -763,8 +806,8 @@ const D = {
   clsColorFor(c){ if(!(c in this.clsColor)) this.clsColor[c]=COLORS[Object.keys(this.clsColor).length%COLORS.length]; return this.clsColor[c]; },
   updateMap(){
     this.layer.clearLayers();
+    this.updateMapControls();
     const legend=document.getElementById('map-legend');
-    const bubble=isDark()?C.sky:C.blue;
     if(this.mode==='detail'&&this.rows){
       document.getElementById('map-hint').textContent='— individual permits, coloured by permit class; click a point for details';
       const pts=[], used={};
@@ -778,18 +821,98 @@ const D = {
       if(pts.length)this.map.fitBounds(pts,{padding:[24,24],maxZoom:16});
       legend.innerHTML = Object.entries(used).slice(0,9).map(([k,v])=>`<span class="lg-item"><i style="background:${v}"></i>${esc(k)}</span>`).join('') || '<span class="lg-muted">No mappable points in this selection</span>';
     }else if(this.stats){
-      document.getElementById('map-hint').textContent='— bubbles per community, sized by permit count; click a bubble to drill in';
-      const maxN=Math.max(...this.stats.comms.map(c=>c.n),1);
-      this.stats.comms.forEach(c=>{
-        if(!isFinite(c.lat)||!isFinite(c.lng))return;
-        L.circleMarker([c.lat,c.lng],{radius:4+24*Math.sqrt(c.n/maxN),weight:1,color:'#fff',fillColor:bubble,fillOpacity:.55})
-          .bindPopup(`<b>${esc(c.name)}</b><br>${fmtN(c.n)} permits · ${fmt$(c.cost)}<br><a href="#" onclick="D.drill('${esc(c.name).replace(/'/g,"\\'")}');return false;">Drill into this community →</a>`)
-          .addTo(this.layer);
-      });
-      this.map.setView([51.05,-114.07],10);
-      legend.innerHTML='<span class="lg-item"><i class="lg-dot lg-sm"></i>fewer permits</span><span class="lg-item"><i class="lg-dot lg-lg"></i>more permits</span><span class="lg-muted">bubble size ∝ permit count per community</span>';
+      if(this.choro && this.mode==='city' && this.boundaries) this.drawChoropleth();
+      else this.drawBubbles();
     }
   },
+  drawBubbles(){
+    const legend=document.getElementById('map-legend');
+    const bubble=isDark()?C.sky:C.blue;
+    document.getElementById('map-hint').textContent='— bubbles per community, sized by permit count; click a bubble to drill in';
+    const maxN=Math.max(...this.stats.comms.map(c=>c.n),1);
+    this.stats.comms.forEach(c=>{
+      if(!isFinite(c.lat)||!isFinite(c.lng))return;
+      L.circleMarker([c.lat,c.lng],{radius:4+24*Math.sqrt(c.n/maxN),weight:1,color:'#fff',fillColor:bubble,fillOpacity:.55})
+        .bindPopup(`<b>${esc(c.name)}</b><br>${fmtN(c.n)} permits · ${fmt$(c.cost)}<br><a href="#" onclick="D.drill('${esc(c.name).replace(/'/g,"\\'")}');return false;">Drill into this community →</a>`)
+        .addTo(this.layer);
+    });
+    if(this.map.setView) this.map.setView([51.05,-114.07],10);
+    legend.innerHTML='<span class="lg-item"><i class="lg-dot lg-sm"></i>fewer permits</span><span class="lg-item"><i class="lg-dot lg-lg"></i>more permits</span><span class="lg-muted">bubble size ∝ permit count per community</span>';
+  },
+  drawChoropleth(){
+    const legend=document.getElementById('map-legend');
+    const metric=CHORO_METRICS[this.choroMetric]||CHORO_METRICS.cost;
+    const minN=metric.minN||3;
+    document.getElementById('map-hint').textContent=`— communities shaded by ${metric.short}; grey = too few permits or no boundary; click an area to drill in`;
+    const byName={}, vals=[];
+    this.stats.comms.forEach(c=>{
+      if(c.n<minN) return;
+      const v=metric.get(c);
+      if(v==null||isNaN(v)) return;
+      byName[String(c.name).toUpperCase().trim()]={c,v};
+      vals.push(v);
+    });
+    if(!vals.length){ this.drawBubbles(); return; }              // nothing to shade → fall back
+    const tv=(metric.log?vals.map(v=>Math.log10(Math.max(v,1))):vals.slice()).sort((a,b)=>a-b);
+    const q=p=>{const idx=(tv.length-1)*p,i=Math.floor(idx),f=idx-i;return tv[i]+((tv[i+1]==null?tv[i]:tv[i+1])-tv[i])*f;};
+    let lo=q(0.02), hi=q(0.98); if(hi<=lo) hi=lo+1e-9;           // robust 2–98 percentile clamp
+    const norm=v=>{const x=metric.log?Math.log10(Math.max(v,1)):v; return (x-lo)/(hi-lo);};
+    const nodata=isDark()?NODATA_FILL_DARK:NODATA_FILL;
+    if(typeof L==='undefined'||!L.geoJSON){ legend.innerHTML=''; return; }
+    const stroke=isDark()?'#0b0f14':'#ffffff';
+    const layer=L.geoJSON(this.boundaries,{
+      style:f=>{
+        const hit=byName[String(f&&f.properties&&f.properties.name||'').toUpperCase().trim()];
+        return {weight:.7,color:stroke,fillColor:hit?rampColor(norm(hit.v)):nodata,fillOpacity:hit ? .82 : .25};
+      },
+      onEachFeature:(f,lyr)=>{
+        if(!lyr||!lyr.bindPopup) return;
+        const nm=(f&&f.properties&&f.properties.name)||'—';
+        const hit=byName[String(nm).toUpperCase().trim()];
+        lyr.bindPopup(hit
+          ? `<b>${esc(nm)}</b><br>${esc(metric.label)}: <b>${esc(metric.fmt(hit.v))}</b><br>${fmtN(hit.c.n)} permits<br><a href="#" onclick="D.drill('${esc(nm).replace(/'/g,"\\'")}');return false;">Drill into this community →</a>`
+          : `<b>${esc(nm)}</b><br><span class="lg-muted">fewer than ${minN} permits in scope</span>`);
+      }
+    });
+    layer.addTo(this.layer);
+    try{ const b=layer.getBounds&&layer.getBounds(); if(b&&b.isValid&&b.isValid()) this.map.fitBounds(b,{padding:[10,10]}); else if(this.map.setView) this.map.setView([51.05,-114.07],10); }catch(e){}
+    const stops=CIVIDIS.map((_,i)=>rampColor(i/(CIVIDIS.length-1))).join(',');
+    const loL=metric.fmt(metric.log?Math.pow(10,lo):lo), hiL=metric.fmt(metric.log?Math.pow(10,hi):hi);
+    legend.innerHTML=`<span class="lg-grad-wrap"><span class="lg-grad-lbl">${esc(loL)}</span><span class="lg-grad" style="background:linear-gradient(to right,${stops})"></span><span class="lg-grad-lbl">${esc(hiL)}</span></span><span class="lg-item"><i class="lg-nodata" style="background:${nodata}"></i>too few / no boundary</span><span class="lg-muted">${esc(metric.label)} by community${metric.log?' · log scale':''}</span>`;
+  },
+  updateMapControls(){
+    const cityMode=this.mode==='city';
+    const wrap=document.getElementById('map-controls'); if(wrap&&wrap.style) wrap.style.display=cityMode?'':'none';
+    const mw=document.getElementById('choro-metric-wrap'); if(mw&&mw.style) mw.style.display=(cityMode&&this.choro)?'':'none';
+    const bB=document.getElementById('mv-bubbles'), bA=document.getElementById('mv-areas');
+    if(bB){ if(bB.classList) bB.classList.toggle('on',!this.choro); if(bB.setAttribute) bB.setAttribute('aria-pressed',(!this.choro).toString()); }
+    if(bA){ if(bA.classList) bA.classList.toggle('on',this.choro); if(bA.setAttribute) bA.setAttribute('aria-pressed',(this.choro).toString()); }
+  },
+  async loadBoundaries(){
+    if(this.boundaries) return this.boundaries;
+    if(this._bPromise) return this._bPromise;
+    this._bPromise=(async()=>{
+      const r=await fetch(BOUNDARIES_URL);
+      if(!r.ok) throw new Error(`Map boundaries failed to load (HTTP ${r.status}).`);
+      return r.json();
+    })();
+    try{ this.boundaries=await this._bPromise; return this.boundaries; }
+    catch(e){ this._bPromise=null; throw e; }
+  },
+  setChoro(on){
+    this.choro=!!on;
+    this.updateMapControls();
+    if(this.choro && this.mode==='city' && !this.boundaries){
+      this.busy(true);
+      this.loadBoundaries()
+        .then(()=>{ if(this.choro) this.updateMap(); })
+        .catch(e=>{ this.choro=false; this.updateMapControls(); this.error(e.message); this.updateMap(); })
+        .finally(()=>this.busy(false));
+    }else{
+      this.updateMap();
+    }
+  },
+  setChoroMetric(m){ if(CHORO_METRICS[m]) this.choroMetric=m; this.updateMap(); },
   drill(name){ document.getElementById('f-comm').value=name; this.map.closePopup(); this.apply(); },
 
   syncCharts(){
