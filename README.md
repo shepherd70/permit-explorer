@@ -35,7 +35,10 @@ dashboards share the same analytics:
    individual map points. Filters are encoded in the URL, so any view can be
    shared or bookmarked, and the current selection can be exported to CSV.
 2. **Offline single-community dashboard** (`dist/permit_dashboard.html`) —
-   self-contained file built from a CSV export; works without internet.
+   self-contained file built from a CSV export; works without internet. It is a
+   point-in-time snapshot — the header and footer show the coverage range and
+   the **"data as of"** export date it was built from — while the live city-wide
+   explorer above is the canonical, always-current view.
 
 ## Usage (offline dashboard)
 
@@ -50,7 +53,10 @@ Open `dist/permit_dashboard.html` in any browser.
 ## Updating the data
 
 Download a fresh export from Calgary's open-data portal, drop it in
-`data/raw/`, and re-run `python build.py`.
+`data/raw/`, and re-run `python build.py`. The coverage range and the "data as
+of" date are derived automatically at build time (the date is read from the
+export's `YYYYMMDD` filename, falling back to its file modification time), so
+they never need hand-editing and can't go stale.
 
 ## Hosting the city-wide explorer
 
