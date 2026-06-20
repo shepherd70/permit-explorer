@@ -77,6 +77,15 @@ npm test           # runs test/harness.js and test/city_harness.js
 CI (`.github/workflows/ci.yml`) runs the build and both harnesses on every push
 and pull request.
 
+`npm test` is deterministic and offline (canned API responses), so it can't
+notice if Calgary changes the live dataset. A separate **live-API smoke test**
+(`test/smoke.js`, run with `npm run smoke`) hits the real c2es-76ed endpoint and
+verifies every field and SoQL feature the city-wide explorer depends on still
+works — it self-extracts the field list and endpoint straight from
+`src/city_explorer.html` so it can't drift. A scheduled workflow
+(`.github/workflows/smoke.yml`) runs it daily and on demand, emailing on
+failure so a silent upstream break gets noticed.
+
 ## Data & attribution
 
 Building-permit data comes from City of Calgary Open Data —
