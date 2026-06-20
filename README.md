@@ -35,8 +35,9 @@ dashboards share the same analytics:
    view (including cost and days-to-issue distributions via server-side
    binning); filter to under 30,000 permits (a community, or one year
    city-wide) to unlock permit-level detail, renovation lifecycle, and
-   individual map points. Filters are encoded in the URL, so any view can be
-   shared or bookmarked, and the current selection can be exported to CSV. The
+   individual map points. Filters **and the map view** (bubbles vs. choropleth
+   and the chosen metric) are encoded in the URL, so any view can be shared or
+   bookmarked, and the current selection can be exported to CSV. The
    community map switches between proportional **bubbles** (permit count) and a
    **choropleth** of an intensive metric (avg project cost, avg days-to-issue,
    or completion rate); boundaries are fetched live, and unmatched or

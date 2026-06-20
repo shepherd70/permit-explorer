@@ -586,6 +586,9 @@ const D = {
     if(p.has('comm')) document.getElementById('f-comm').value=p.get('comm');
     ['cls','work','status'].forEach(k=>{ if(p.has(k)) setSel('f-'+k,p.get(k)); });
     if(p.has('q')) document.getElementById('f-q').value=p.get('q');
+    if(p.get('map')==='areas') this.choro=true;
+    const m=p.get('metric'); if(m && CHORO_METRICS[m]) this.choroMetric=m;
+    const msel=document.getElementById('choro-metric'); if(msel) msel.value=this.choroMetric;
   },
   writeURL(){
     if(typeof location==='undefined' || typeof history==='undefined' || !history.replaceState || typeof URLSearchParams==='undefined') return;
@@ -596,6 +599,7 @@ const D = {
     const comm=document.getElementById('f-comm').value.trim(); if(comm) p.set('comm',comm);
     ['cls','work','status'].forEach(k=>{ const v=document.getElementById('f-'+k).value; if(v && v!=='all') p.set(k,v); });
     const q=document.getElementById('f-q').value.trim(); if(q) p.set('q',q);
+    if(this.choro){ p.set('map','areas'); if(this.choroMetric && this.choroMetric!=='cost') p.set('metric',this.choroMetric); }
     const qs=p.toString();
     try{ history.replaceState(null,'', location.pathname+(qs?('?'+qs):'')+(location.hash||'')); }catch(e){}
   },
@@ -821,8 +825,10 @@ const D = {
       if(pts.length)this.map.fitBounds(pts,{padding:[24,24],maxZoom:16});
       legend.innerHTML = Object.entries(used).slice(0,9).map(([k,v])=>`<span class="lg-item"><i style="background:${v}"></i>${esc(k)}</span>`).join('') || '<span class="lg-muted">No mappable points in this selection</span>';
     }else if(this.stats){
-      if(this.choro && this.mode==='city' && this.boundaries) this.drawChoropleth();
-      else this.drawBubbles();
+      if(this.choro && this.mode==='city'){
+        if(this.boundaries) this.drawChoropleth();
+        else { this.drawBubbles(); this.ensureBoundaries(); }   // first toggle, or a shared ?map=areas link
+      }else this.drawBubbles();
     }
   },
   drawBubbles(){
@@ -899,20 +905,16 @@ const D = {
     try{ this.boundaries=await this._bPromise; return this.boundaries; }
     catch(e){ this._bPromise=null; throw e; }
   },
-  setChoro(on){
-    this.choro=!!on;
-    this.updateMapControls();
-    if(this.choro && this.mode==='city' && !this.boundaries){
-      this.busy(true);
-      this.loadBoundaries()
-        .then(()=>{ if(this.choro) this.updateMap(); })
-        .catch(e=>{ this.choro=false; this.updateMapControls(); this.error(e.message); this.updateMap(); })
-        .finally(()=>this.busy(false));
-    }else{
-      this.updateMap();
-    }
+  ensureBoundaries(){
+    if(this.boundaries || this._bPromise) return;            // already loaded or in flight
+    this.busy(true);
+    this.loadBoundaries()
+      .then(()=>{ if(this.choro && this.mode==='city') this.updateMap(); })
+      .catch(e=>{ this.choro=false; this.updateMapControls(); this.writeURL(); this.error(e.message); this.updateMap(); })
+      .finally(()=>this.busy(false));
   },
-  setChoroMetric(m){ if(CHORO_METRICS[m]) this.choroMetric=m; this.updateMap(); },
+  setChoro(on){ this.choro=!!on; this.updateMapControls(); this.writeURL(); this.updateMap(); },
+  setChoroMetric(m){ if(CHORO_METRICS[m]) this.choroMetric=m; this.writeURL(); this.updateMap(); },
   drill(name){ document.getElementById('f-comm').value=name; this.map.closePopup(); this.apply(); },
 
   syncCharts(){

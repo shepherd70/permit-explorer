@@ -139,6 +139,24 @@ eval(src+'\nglobalThis.D=D;');
   check('no error surfaced', !el('err').classList._s.has('show'));
   console.log('fetches made:', fetchLog.length);
 
+  // --- URL state round-trip for the map view (bubbles/areas + metric) ---
+  // readURL/writeURL no-op without a DOM location/history, so stub them here.
+  global.location = {search:'', pathname:'/permit-explorer/', hash:'', _last:''};
+  global.history = { replaceState:(s,t,url)=>{ global.location._last=url; } };
+  D.choro=true; D.choroMetric='comp'; D.writeURL();
+  console.log('URL written:', global.location._last);
+  check('writeURL encodes map=areas', /[?&]map=areas/.test(global.location._last), global.location._last);
+  check('writeURL encodes non-default metric=comp', /[?&]metric=comp/.test(global.location._last), global.location._last);
+  D.choro=true; D.choroMetric='cost'; D.writeURL();
+  check('writeURL omits default metric=cost', /map=areas/.test(global.location._last) && !/metric=/.test(global.location._last), global.location._last);
+  D.choro=false; D.choroMetric='cost'; D.writeURL();
+  check('writeURL omits map when bubbles', !/map=areas/.test(global.location._last), global.location._last);
+  global.location.search='?map=areas&metric=dti';        // a shared link
+  D.choro=false; D.choroMetric='cost'; D.readURL();
+  check('readURL restores choro from map=areas', D.choro===true, D.choro);
+  check('readURL restores metric from URL', D.choroMetric==='dti', D.choroMetric);
+  delete global.location; delete global.history;
+
   console.log(`\n${passes} passed, ${failures} failed`);
   if(failures) process.exit(1);
 })().catch(e=>{console.error('HARNESS FAIL:',e);process.exit(1);});
