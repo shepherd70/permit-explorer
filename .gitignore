@@ -10,3 +10,9 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+
+# Claude Code local tooling (preview launch config, local settings)
+.claude/
+
+# Cloudflare Pages build output (assembled by deploy/build-site.sh)
+_site/

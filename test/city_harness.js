@@ -10,7 +10,7 @@ const els={};
 function el(id){ if(!els[id]) els[id]={id,value:'',textContent:'',innerHTML:'',className:'',style:{},options:[],disabled:false,
   add(o){this.options.push(o); if(this.options.length===1&&this.value==='')this.value=o.value;},
   appendChild(){}, classList:{_s:new Set(),toggle(c,on){on?this._s.add(c):this._s.delete(c)},add(c){this._s.add(c)},remove(c){this._s.delete(c)}}}; return els[id]; }
-['f-cls','f-work','f-status'].forEach(id=>el(id).value='all');
+['f-work','f-status'].forEach(id=>el(id).value='all');
 global.Option=function(t,v){return{text:t,value:String(v)}};
 global.document={getElementById:el,createElement:()=>({}),body:{appendChild(){},removeChild(){}}};
 global.Chart=class{constructor(c,cfg){this.data=(cfg&&cfg.data)||{labels:[],datasets:[]}}update(){}};
@@ -23,6 +23,7 @@ global.L={map:()=>({setView(){return this},fitBounds(){},closePopup(){},invalida
 let fetchLog=[];
 global.fetch=async(url)=>{
   fetchLog.push(url);
+  if((String(url).includes('surr-xmvs')||String(url).includes('.geojson')) && global.__failBoundaries) return {ok:false,status:503,statusText:'Service Unavailable',text:async()=>'',json:async()=>({})};
   if(String(url).includes('surr-xmvs')||String(url).includes('.geojson')) return {ok:true,status:200,text:async()=>'',json:async()=>({type:'FeatureCollection',features:[
     {type:'Feature',properties:{name:'HARVEST HILLS'},geometry:{type:'Polygon',coordinates:[[[-114.06,51.14],[-114.05,51.14],[-114.05,51.15],[-114.06,51.14]]]}},
     {type:'Feature',properties:{name:'DOWNTOWN COMMERCIAL CORE'},geometry:{type:'Polygon',coordinates:[[[-114.07,51.04],[-114.06,51.04],[-114.06,51.05],[-114.07,51.04]]]}},
@@ -32,8 +33,19 @@ global.fetch=async(url)=>{
   const sel=p['$select']||'', grp=p['$group']||'', where=p['$where']||'';
   const detailScope = where.includes("communityname) = 'HARVEST HILLS'");
   const json=(d)=>({ok:true,status:200,json:async()=>d,text:async()=>JSON.stringify(d)});
-  if(sel.includes('count(1) as n, sum(estprojectcost)')&&!grp)
-    return json([{n:detailScope?'1480':'490787',c:detailScope?'220000000':'3.1e10',u:detailScope?'949':'356804',d:'23.6'}]);
+  if(sel.includes('count(1) as n, sum(estprojectcost)')&&!grp){
+    // category-aware count: model Single Family as the dominant category so hiding it via
+    // the `permitclassgroup IN (...)` clause drops the FILTERED count below DETAIL_THRESHOLD
+    // and flips city->detail. If a future change drops the IN clause from THIS count query,
+    // the flip assertion below breaks — which is the whole point of modelling it here.
+    const CAT_N={'Single Family':489307,'Garage':1480};   // sum = 490787 (the full city count)
+    const m=where.match(/permitclassgroup IN \(([^)]*)\)/);
+    const n = detailScope ? 1480
+      : m ? m[1].split(',').reduce((s,t)=>s+(CAT_N[t.replace(/'/g,'').trim()]||0),0)
+      : 490787;
+    const det = n<=30000;
+    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6'}]);
+  }
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
@@ -65,6 +77,12 @@ eval(src+'\nglobalThis.D=D;');
   check('init populated year options', el('f-y1').options.length===2, el('f-y1').options.length);
   check('init populated communities', D.communities.length===2, D.communities.length);
 
+  // --- permit-category multi-select: built from the permitclassgroup list, Single Family hidden by default ---
+  check('init built category list', !!D.cats && D.cats.length===2, D.cats && D.cats.length);
+  check('default hides Single Family', !!D.activeCats && !D.activeCats.has('Single Family') && D.activeCats.has('Garage'), D.activeCats && [...D.activeCats]);
+  check('where() excludes Single Family by default', /permitclassgroup IN \('Garage'\)/.test(D.where()), D.where());
+
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.renderCats();   // show all categories → full-city baseline below
   await D.apply();
   console.log('CITY MODE:', D.mode, '| total:', D.total, '| badge:', el('count-badge').textContent);
   console.log('  KPI count:', el('k-count').textContent, '| cost:', el('k-cost').textContent, '| avg dti:', el('k-dti').textContent, '| completion:', el('k-comp').textContent);
@@ -80,22 +98,43 @@ eval(src+'\nglobalThis.D=D;');
   check('city KPI avg days-to-issue', el('k-dti').textContent==='24', el('k-dti').textContent);
   check('city KPI completion rate', el('k-comp').textContent==='95%', el('k-comp').textContent);
   check('city year chart points', D.charts.year.data.labels.length===2, D.charts.year.data.labels.length);
-  check('city community bubbles', D.stats.comms.length===2, D.stats.comms.length);
+  check('city communities loaded', D.stats.comms.length===2, D.stats.comms.length);
   check('city table rendered', /<tbody>/.test(el('tbl').innerHTML));
   check('renov card locked in city mode', el('card-renov').classList._s.has('locked')===true);
   check('city insights generated', (el('insights').innerHTML.match(/class="insight"/g)||[]).length>=5);
 
-  // --- choropleth toggle (community areas) ---
-  D.setChoro(true);                              // kicks an async boundary fetch + re-render
-  await new Promise(r=>setTimeout(r,30));
-  console.log('CHORO: boundaries:', !!D.boundaries, '| features:', D.boundaries&&(D.boundaries.features||[]).length, '| legend:', el('map-legend').innerHTML.slice(0,70));
+  // --- community choropleth (city mode is ALWAYS a choropleth now; no bubbles toggle) ---
+  await new Promise(r=>setTimeout(r,30));        // let the preloaded boundaries resolve + the city render settle
+  console.log('CHORO: boundaries:', !!D.boundaries, '| metric:', D.choroMetric, '| legend:', el('map-legend').innerHTML.slice(0,80));
   check('choropleth boundaries fetched', !!D.boundaries && (D.boundaries.features||[]).length===3, D.boundaries&&(D.boundaries.features||[]).length);
-  check('choropleth legend (avg cost, gradient)', /lg-grad/.test(el('map-legend').innerHTML) && /Avg project cost/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
-  check('choropleth controls toggled on', el('mv-areas').classList._s.has('on')===true && el('mv-bubbles').classList._s.has('on')===false);
+  check('default shading metric is avg permits/year', D.choroMetric==='ppy', D.choroMetric);
+  // ppy must equal community permit count / selected year-span (1999..2026 -> 28); guards the n/yspan formula incl. the +1
+  { const ysp=(+D.val('f-y2'))-(+D.val('f-y1'))+1;
+    check('ppy = permits / selected year-span (yspan=28)', ysp===28 && D.stats.comms.length>0 && D.stats.comms.every(c=>Math.abs(c.ppy-c.n/ysp)<1e-9),
+      {ysp, sample:D.stats.comms[0]&&{n:D.stats.comms[0].n,ppy:D.stats.comms[0].ppy}}); }
+  check('map controls shown in city mode', el('map-controls').style.display==='', el('map-controls').style.display);
+  check('choropleth legend shows permits/year gradient', /lg-grad/.test(el('map-legend').innerHTML) && /permits ?\/ ?year/i.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,110));
+  D.setChoroMetric('cost');
+  check('metric switch -> avg project cost', /lg-grad/.test(el('map-legend').innerHTML) && /Avg project cost/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
   D.setChoroMetric('comp');
-  check('choropleth metric switch (completion rate)', /Completion rate/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
-  D.setChoro(false);
-  check('choropleth toggle back to bubbles', /bubble size/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,60));
+  check('metric switch -> completion rate', /Completion rate/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
+  D.setChoroMetric('ppy');
+  check('metric switch -> back to permits/year', /permits ?\/ ?year/i.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,90));
+
+  // no-vals fallback: when every community is below a metric's minN gate, draw bare boundaries (not a blank map)
+  D.stats.comms.forEach(c=>c.n=2);               // below dti's minN (5); comms are rebuilt on the next apply() so this is local
+  D.setChoroMetric('dti');
+  check('no-vals fallback shows a not-enough-permits legend (not blank)', /not enough permits/i.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,110));
+  D.setChoroMetric('ppy');
+
+  // boundary-load FAILURE must be recoverable and map-integrated (no blank, unrecoverable map)
+  global.__failBoundaries=true; D.boundaries=null; D._bPromise=null;
+  D.retryBoundaries(); await new Promise(r=>setTimeout(r,30));
+  check('boundary failure shows a Retry affordance in the map', /Retry/.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,120));
+  check('boundary failure surfaces an error', el('err').classList._s.has('show'), el('err-text').textContent);
+  global.__failBoundaries=false; D._bPromise=null;
+  D.retryBoundaries(); await new Promise(r=>setTimeout(r,30));
+  check('retry after recovery clears the error and reloads boundaries', !el('err').classList._s.has('show') && !!D.boundaries, [el('err').classList._s.has('show'), !!D.boundaries]);
 
   // drill into community -> detail mode
   el('f-comm').value='HARVEST HILLS';
@@ -139,22 +178,58 @@ eval(src+'\nglobalThis.D=D;');
   check('no error surfaced', !el('err').classList._s.has('show'));
   console.log('fetches made:', fetchLog.length);
 
-  // --- URL state round-trip for the map view (bubbles/areas + metric) ---
+  // --- permit-category filter: select all / clear all / empty state / re-check ---
+  el('f-comm').value='';                                  // back to a city-scope query
+  D.catsAll(true); await new Promise(r=>setTimeout(r,30));
+  check('select all activates every category', D.activeCats.size===2, D.activeCats.size);
+  check('where() omits category clause when all shown', !/permitclassgroup IN/.test(D.where()), D.where());
+  check('select all stays in city mode', D.mode==='city', D.mode);
+
+  D.catsAll(false); await new Promise(r=>setTimeout(r,30));
+  check('clear all hides every category', D.activeCats.size===0, D.activeCats.size);
+  check('clear all -> no permits in scope', D.total===0, D.total);
+  check('clear all -> results hidden', el('results').style.display==='none', el('results').style.display);
+  check('clear all -> empty-state shown', el('empty-state').style.display==='', el('empty-state').style.display);
+  check('clear all -> empty copy explains categories', /categor/i.test(el('empty-text').textContent), el('empty-text').textContent);
+
+  D.toggleCatIdx(0,true); await new Promise(r=>setTimeout(r,30));  // re-check cats[0] = Single Family
+  check('re-checking a category exits the empty state', D.activeCats.has('Single Family') && D.total>0, [D.total,[...D.activeCats]]);
+  check('re-checking a category restores results', el('results').style.display==='', el('results').style.display);
+
+  // the city/detail threshold evaluates the FILTERED count: in city scope (no community),
+  // hiding the dominant category must drop the count below DETAIL_THRESHOLD and flip to detail
+  el('f-comm').value='';
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.renderCats(); await D.apply();
+  check('all categories shown -> city mode (full count)', D.mode==='city' && D.total===490787, [D.mode,D.total]);
+  D.toggleCatIdx(0,false); await new Promise(r=>setTimeout(r,30));   // hide Single Family (cats[0])
+  check('hiding the dominant category flips city -> detail on the filtered count', D.mode==='detail' && D.total===1480, [D.mode,D.total]);
+
+  D.initCats(); D.renderCats();                           // restore default (Single Family hidden)
+  check('initCats restores default hide', !D.activeCats.has('Single Family') && D.activeCats.has('Garage'), [...D.activeCats]);
+
+  // --- URL state round-trip for the map shading metric ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.
   global.location = {search:'', pathname:'/permit-explorer/', hash:'', _last:''};
   global.history = { replaceState:(s,t,url)=>{ global.location._last=url; } };
-  D.choro=true; D.choroMetric='comp'; D.writeURL();
+  D.choroMetric='comp'; D.writeURL();
   console.log('URL written:', global.location._last);
-  check('writeURL encodes map=areas', /[?&]map=areas/.test(global.location._last), global.location._last);
   check('writeURL encodes non-default metric=comp', /[?&]metric=comp/.test(global.location._last), global.location._last);
-  D.choro=true; D.choroMetric='cost'; D.writeURL();
-  check('writeURL omits default metric=cost', /map=areas/.test(global.location._last) && !/metric=/.test(global.location._last), global.location._last);
-  D.choro=false; D.choroMetric='cost'; D.writeURL();
-  check('writeURL omits map when bubbles', !/map=areas/.test(global.location._last), global.location._last);
-  global.location.search='?map=areas&metric=dti';        // a shared link
-  D.choro=false; D.choroMetric='cost'; D.readURL();
-  check('readURL restores choro from map=areas', D.choro===true, D.choro);
+  D.choroMetric='ppy'; D.writeURL();
+  check('writeURL omits default metric=ppy', !/metric=/.test(global.location._last), global.location._last);
+  D.choroMetric='cost'; D.writeURL();
+  check('writeURL encodes non-default metric=cost', /[?&]metric=cost/.test(global.location._last), global.location._last);
+  global.location.search='?metric=dti'; D.choroMetric='ppy'; D.readURL();
   check('readURL restores metric from URL', D.choroMetric==='dti', D.choroMetric);
+  global.location.search='?map=areas'; D.readURL();              // legacy link -> ignored, no throw, metric unchanged
+  check('legacy ?map=areas param is harmless', D.choroMetric==='dti', D.choroMetric);
+
+  // permit-category URL round-trip (encode HIDDEN set; default omitted)
+  global.location.search=''; D.initCats(); D.writeURL();
+  check('writeURL omits cats at default (hide Single Family)', !/[?&]cats=/.test(global.location._last), global.location._last);
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.writeURL();      // show all
+  check('writeURL encodes cats=* when all shown', /[?&]cats=\*/.test(global.location._last), global.location._last);
+  global.location.search='?cats=Garage'; D.readURL();            // shared link hiding Garage
+  check('readURL hides the listed category', !D.activeCats.has('Garage') && D.activeCats.has('Single Family'), [...D.activeCats]);
   delete global.location; delete global.history;
 
   console.log(`\n${passes} passed, ${failures} failed`);
