@@ -143,8 +143,9 @@ const DATA = [{"id":"BP2017-03398","status":"Completed","applied":"2017-04-06","
 
 const COLORS = ['#4C72B0','#DD8452','#55A868','#C44E52','#8172B3','#937860','#DA8BC3','#8C8C8C','#CCB974','#64B5CD'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-const fmt$ = v => v==null?'—':(Math.abs(v)>=1e6?'$'+(v/1e6).toFixed(2)+'M':Math.abs(v)>=1e3?'$'+(v/1e3).toFixed(0)+'K':'$'+Math.round(v).toLocaleString());
-const fmtN = v => v==null?'—':v.toLocaleString();
+const fmt$ = v => v==null||isNaN(v)?'—':(Math.abs(v)>=1e9?'$'+(v/1e9).toFixed(2)+'B':Math.abs(v)>=1e6?'$'+(v/1e6).toFixed(2)+'M':Math.abs(v)>=1e3?'$'+(v/1e3).toFixed(0)+'K':'$'+Math.round(v).toLocaleString());
+const fmtN = v => v==null||isNaN(v)?'—':Math.round(v).toLocaleString();
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const median = a => {if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;};
 DATA.forEach(d=>{ d.year = d.applied?+d.applied.slice(0,4):null; d.month = d.applied?+d.applied.slice(5,7)-1:null; });
 
@@ -318,7 +319,7 @@ const D = {
     this.filtered.forEach(d=>{
       if(d.lat==null)return; pts.push([d.lat,d.lng]);
       L.circleMarker([d.lat,d.lng],{radius:d.cost?Math.min(11,3+Math.log10(Math.max(d.cost,100))):4,weight:1,color:'#fff',fillColor:this.clsColor[d.cls]||'#888',fillOpacity:.78})
-        .bindPopup(`<b>${d.id}</b> · ${d.status}<br>${d.addr||''}<br>${d.cls} — ${d.work}<br>${d.desc?d.desc.slice(0,120):''}<br><b>${fmt$(d.cost)}</b>${d.contractor?' · '+d.contractor:''}<br>Applied ${d.applied||'—'}`)
+        .bindPopup(`<b>${esc(d.id)}</b> · ${esc(d.status)}<br>${esc(d.addr||'')}<br>${esc(d.cls)} — ${esc(d.work)}<br>${esc(d.desc?d.desc.slice(0,120):'')}<br><b>${fmt$(d.cost)}</b>${d.contractor?' · '+esc(d.contractor):''}<br>Applied ${d.applied||'—'}`)
         .addTo(this.layer);
     });
     if(pts.length)this.map.fitBounds(pts,{padding:[20,20],maxZoom:16});
@@ -335,9 +336,9 @@ const D = {
         out.push(`Peak construction value: <b>${g.ys[iCost]}</b> at <b>${fmt$(g.costs[iCost])}</b> in estimated cost.`);
       }
       const big=f.filter(d=>d.cost!=null).sort((a,b)=>b.cost-a.cost)[0];
-      if(big)out.push(`Largest project: <b>${fmt$(big.cost)}</b> — ${big.desc?big.desc.slice(0,80):big.cls} (${big.id}, ${big.year}).`);
+      if(big)out.push(`Largest project: <b>${fmt$(big.cost)}</b> — ${esc(big.desc?big.desc.slice(0,80):big.cls)} (${esc(big.id)}, ${big.year}).`);
       const ct=this.topN('contractor',1);
-      if(ct.length)out.push(`Most active contractor: <b>${ct[0][0]}</b> with <b>${ct[0][1]}</b> permits (${(ct[0][1]/f.length*100).toFixed(1)}% of filtered).`);
+      if(ct.length)out.push(`Most active contractor: <b>${esc(ct[0][0])}</b> with <b>${ct[0][1]}</b> permits (${(ct[0][1]/f.length*100).toFixed(1)}% of filtered).`);
       const mo=Array(12).fill(0);f.forEach(d=>{if(d.month!=null)mo[d.month]++;});
       const mMax=mo.indexOf(Math.max(...mo)),mMin=mo.indexOf(Math.min(...mo.map((v,i)=>v||Infinity)));
       out.push(`Seasonal pattern: applications peak in <b>${MONTHS[mMax]}</b> (${mo[mMax]}) and bottom out in <b>${MONTHS[mMin]}</b> (${mo[mMin]}).`);
@@ -355,7 +356,7 @@ const D = {
         out.push(`Renovation lifecycle: <b>${this.renovLags.length}</b> homes renovated after a new build — median <b>${median(this.renovLags).toFixed(1)} years</b> later; ${(within5/this.renovLags.length*100).toFixed(0)}% within 5 years.`);
       }
       const addrTop=this.topN('addr',1);
-      if(addrTop.length&&addrTop[0][1]>2)out.push(`Most-permitted address: <b>${addrTop[0][0]}</b> with <b>${addrTop[0][1]}</b> permits.`);
+      if(addrTop.length&&addrTop[0][1]>2)out.push(`Most-permitted address: <b>${esc(addrTop[0][0])}</b> with <b>${addrTop[0][1]}</b> permits.`);
       const costs2=f.map(d=>d.cost).filter(v=>v!=null).sort((a,b)=>b-a);
       if(costs2.length>20){
         const tot=costs2.reduce((s,v)=>s+v,0),n10=Math.ceil(costs2.length*.1);
@@ -393,11 +394,11 @@ const D = {
     h+='</tr></thead><tbody>';
     pg.forEach(d=>{
       const stc=STATUS_COLORS[d.status]||['#eceff1','#546e7a'];
-      h+=`<tr><td style="white-space:nowrap">${d.id}</td><td style="white-space:nowrap">${d.applied||'—'}</td>`+
-        `<td><span class="pill" style="background:${stc[0]};color:${stc[1]}">${d.status}</span></td>`+
-        `<td>${d.cls}</td><td>${d.work}</td><td class="num">${fmt$(d.cost)}</td><td class="num">${d.units||''}</td>`+
-        `<td class="num">${d.dti==null?'—':d.dti}</td><td>${d.contractor||'—'}</td><td>${d.addr||'—'}</td>`+
-        `<td class="desc-cell">${d.desc?(d.desc.length>110?d.desc.slice(0,108)+'…':d.desc):'—'}</td></tr>`;
+      h+=`<tr><td style="white-space:nowrap">${esc(d.id)}</td><td style="white-space:nowrap">${d.applied||'—'}</td>`+
+        `<td><span class="pill" style="background:${stc[0]};color:${stc[1]}">${esc(d.status)}</span></td>`+
+        `<td>${esc(d.cls)}</td><td>${esc(d.work)}</td><td class="num">${fmt$(d.cost)}</td><td class="num">${d.units||''}</td>`+
+        `<td class="num">${d.dti==null?'—':d.dti}</td><td>${esc(d.contractor)||'—'}</td><td>${esc(d.addr)||'—'}</td>`+
+        `<td class="desc-cell">${d.desc?esc(d.desc.length>110?d.desc.slice(0,108)+'…':d.desc):'—'}</td></tr>`;
     });
     h+='</tbody></table>';
     document.getElementById('tbl').innerHTML=h;
