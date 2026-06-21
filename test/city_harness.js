@@ -77,13 +77,12 @@ eval(src+'\nglobalThis.D=D;');
   check('init populated year options', el('f-y1').options.length===2, el('f-y1').options.length);
   check('init populated communities', D.communities.length===2, D.communities.length);
 
-  // --- permit-category multi-select: built from the permitclassgroup list, Single Family hidden by default ---
+  // --- permit-category multi-select: built from the permitclassgroup list, EVERY category checked by default ---
   check('init built category list', !!D.cats && D.cats.length===2, D.cats && D.cats.length);
-  check('default hides Single Family', !!D.activeCats && !D.activeCats.has('Single Family') && D.activeCats.has('Garage'), D.activeCats && [...D.activeCats]);
-  check('where() excludes Single Family by default', /permitclassgroup IN \('Garage'\)/.test(D.where()), D.where());
+  check('every category checked by default (incl. Single Family)', !!D.activeCats && D.activeCats.has('Single Family') && D.activeCats.has('Garage') && D.activeCats.size===2, D.activeCats && [...D.activeCats]);
+  check('where() has no category clause by default', !/permitclassgroup IN/.test(D.where()), D.where());
 
-  D.activeCats=new Set(D.cats.map(c=>c.name)); D.renderCats();   // show all categories → full-city baseline below
-  await D.apply();
+  await D.apply();   // default is all-categories-shown → full-city baseline below
   console.log('CITY MODE:', D.mode, '| total:', D.total, '| badge:', el('count-badge').textContent);
   console.log('  KPI count:', el('k-count').textContent, '| cost:', el('k-cost').textContent, '| avg dti:', el('k-dti').textContent, '| completion:', el('k-comp').textContent);
   console.log('  year chart pts:', D.charts.year.data.labels.length, '| comm bubbles:', D.stats.comms.length);
@@ -204,8 +203,8 @@ eval(src+'\nglobalThis.D=D;');
   D.toggleCatIdx(0,false); await new Promise(r=>setTimeout(r,30));   // hide Single Family (cats[0])
   check('hiding the dominant category flips city -> detail on the filtered count', D.mode==='detail' && D.total===1480, [D.mode,D.total]);
 
-  D.initCats(); D.renderCats();                           // restore default (Single Family hidden)
-  check('initCats restores default hide', !D.activeCats.has('Single Family') && D.activeCats.has('Garage'), [...D.activeCats]);
+  D.initCats(); D.renderCats();                           // restore default (every category shown)
+  check('initCats restores default (all categories shown)', D.activeCats.has('Single Family') && D.activeCats.has('Garage') && D.activeCats.size===2, [...D.activeCats]);
 
   // --- URL state round-trip for the map shading metric ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.
@@ -223,11 +222,11 @@ eval(src+'\nglobalThis.D=D;');
   global.location.search='?map=areas'; D.readURL();              // legacy link -> ignored, no throw, metric unchanged
   check('legacy ?map=areas param is harmless', D.choroMetric==='dti', D.choroMetric);
 
-  // permit-category URL round-trip (encode HIDDEN set; default omitted)
+  // permit-category URL round-trip (encode the HIDDEN set; default = all shown → omitted)
   global.location.search=''; D.initCats(); D.writeURL();
-  check('writeURL omits cats at default (hide Single Family)', !/[?&]cats=/.test(global.location._last), global.location._last);
-  D.activeCats=new Set(D.cats.map(c=>c.name)); D.writeURL();      // show all
-  check('writeURL encodes cats=* when all shown', /[?&]cats=\*/.test(global.location._last), global.location._last);
+  check('writeURL omits cats at default (all shown)', !/[?&]cats=/.test(global.location._last), global.location._last);
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.activeCats.delete('Single Family'); D.writeURL();   // hide one category
+  check('writeURL encodes the hidden category', /[?&]cats=Single(\+|%20)Family/.test(global.location._last), global.location._last);
   global.location.search='?cats=Garage'; D.readURL();            // shared link hiding Garage
   check('readURL hides the listed category', !D.activeCats.has('Garage') && D.activeCats.has('Single Family'), [...D.activeCats]);
   delete global.location; delete global.history;

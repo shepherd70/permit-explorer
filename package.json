@@ -1,13 +1,10 @@
 {
   "name": "permit-explorer",
   "version": "1.0.0",
-  "description": "Interactive dashboards for exploring City of Calgary building-permit data — a live city-wide explorer plus a self-contained offline community dashboard.",
+  "description": "A live, single-page tool for exploring City of Calgary building-permit data, served at the site root.",
   "private": true,
   "scripts": {
-    "test": "node test/harness.js && node test/city_harness.js && node test/drift.js",
-    "test:city": "node test/city_harness.js",
-    "test:offline": "node test/harness.js",
-    "test:drift": "node test/drift.js",
+    "test": "node test/city_harness.js",
     "smoke": "node test/smoke.js",
     "build": "python build.py"
   },

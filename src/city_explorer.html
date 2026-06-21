@@ -455,7 +455,6 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 <script>
 const API = 'https://data.calgary.ca/resource/c2es-76ed.json';
 const DETAIL_THRESHOLD = 30000;
-const DEFAULT_HIDE = 'Single Family';   // permit category hidden by default (dominates the data / clutters the map)
 const C = {blue:'#0072B2',amber:'#E69F00',green:'#009E73',red:'#D55E00',pink:'#CC79A7',sky:'#56B4E9',purple:'#6A4C93',gray:'#8C8C8C'};
 const COLORS = [C.blue,C.amber,C.green,C.red,C.pink,C.sky,C.purple,C.gray,'#117733','#88CCEE'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -613,9 +612,7 @@ const D = {
   // --- permit-category multi-select (replaces the old single-class dropdown) ---
   initCats(){
     if(!this.cats) return;
-    const all=this.cats.map(c=>c.name);
-    this.activeCats=new Set(all);
-    if(this.activeCats.has(DEFAULT_HIDE) && this.activeCats.size>1) this.activeCats.delete(DEFAULT_HIDE);
+    this.activeCats=new Set(this.cats.map(c=>c.name));   // every category checked by default
   },
   renderCats(){
     const list=document.getElementById('cat-list'); if(!list) return;
@@ -687,12 +684,9 @@ const D = {
     const comm=document.getElementById('f-comm').value.trim(); if(comm) p.set('comm',comm);
     ['work','status'].forEach(k=>{ const v=document.getElementById('f-'+k).value; if(v && v!=='all') p.set(k,v); });
     const q=document.getElementById('f-q').value.trim(); if(q) p.set('q',q);
-    if(this.cats && this.activeCats){                               // encode the HIDDEN categories; default (hide DEFAULT_HIDE) is omitted for clean links
-      const all=this.cats.map(c=>c.name);
-      const hidden=all.filter(n=>!this.activeCats.has(n));
-      const defHidden=(all.indexOf(DEFAULT_HIDE)>=0 && all.length>1)?[DEFAULT_HIDE]:[];
-      const isDefault = hidden.length===defHidden.length && hidden.every(n=>defHidden.indexOf(n)>=0);
-      if(!isDefault) p.set('cats', hidden.length?hidden.join(','):'*');
+    if(this.cats && this.activeCats){                               // encode the HIDDEN categories; the default (all shown) is omitted for clean links
+      const hidden=this.cats.map(c=>c.name).filter(n=>!this.activeCats.has(n));
+      if(hidden.length) p.set('cats', hidden.join(','));
     }
     if(this.choroMetric && this.choroMetric!=='ppy') p.set('metric',this.choroMetric);   // default metric (ppy) omitted for clean links
     const qs=p.toString();
