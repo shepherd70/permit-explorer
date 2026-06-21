@@ -72,7 +72,12 @@ def clean_col(s: pd.Series) -> pd.Series:
 
 def load(src: Path) -> list[dict]:
     df = pd.read_csv(src, usecols=USECOLS)
-    df["cost"] = pd.to_numeric(df["EstProjectCost"].str.replace(r"[\$,]", "", regex=True), errors="coerce")
+    # astype(str) first so the .str accessor never depends on pandas' inferred
+    # dtype: a future export with plain-numeric (or empty) cost values would be
+    # read as float64, and df["EstProjectCost"].str.replace(...) would then raise
+    # AttributeError and abort the build. errors="coerce" maps the resulting
+    # "nan" strings back to NaN. (Same robust pattern clean_col() already uses.)
+    df["cost"] = pd.to_numeric(df["EstProjectCost"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
     df["sqft"] = pd.to_numeric(df["TotalSqFt"], errors="coerce")
     df["units"] = pd.to_numeric(df["HousingUnits"], errors="coerce").fillna(0).astype(int)
     for c in ["AppliedDate", "IssuedDate", "CompletedDate"]:
