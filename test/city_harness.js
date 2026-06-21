@@ -10,7 +10,7 @@ const els={};
 function el(id){ if(!els[id]) els[id]={id,value:'',textContent:'',innerHTML:'',className:'',style:{},options:[],disabled:false,
   add(o){this.options.push(o); if(this.options.length===1&&this.value==='')this.value=o.value;},
   appendChild(){}, classList:{_s:new Set(),toggle(c,on){on?this._s.add(c):this._s.delete(c)},add(c){this._s.add(c)},remove(c){this._s.delete(c)}}}; return els[id]; }
-['f-cls','f-work','f-status'].forEach(id=>el(id).value='all');
+['f-work','f-status'].forEach(id=>el(id).value='all');
 global.Option=function(t,v){return{text:t,value:String(v)}};
 global.document={getElementById:el,createElement:()=>({}),body:{appendChild(){},removeChild(){}}};
 global.Chart=class{constructor(c,cfg){this.data=(cfg&&cfg.data)||{labels:[],datasets:[]}}update(){}};
@@ -32,8 +32,19 @@ global.fetch=async(url)=>{
   const sel=p['$select']||'', grp=p['$group']||'', where=p['$where']||'';
   const detailScope = where.includes("communityname) = 'HARVEST HILLS'");
   const json=(d)=>({ok:true,status:200,json:async()=>d,text:async()=>JSON.stringify(d)});
-  if(sel.includes('count(1) as n, sum(estprojectcost)')&&!grp)
-    return json([{n:detailScope?'1480':'490787',c:detailScope?'220000000':'3.1e10',u:detailScope?'949':'356804',d:'23.6'}]);
+  if(sel.includes('count(1) as n, sum(estprojectcost)')&&!grp){
+    // category-aware count: model Single Family as the dominant category so hiding it via
+    // the `permitclassgroup IN (...)` clause drops the FILTERED count below DETAIL_THRESHOLD
+    // and flips city->detail. If a future change drops the IN clause from THIS count query,
+    // the flip assertion below breaks — which is the whole point of modelling it here.
+    const CAT_N={'Single Family':489307,'Garage':1480};   // sum = 490787 (the full city count)
+    const m=where.match(/permitclassgroup IN \(([^)]*)\)/);
+    const n = detailScope ? 1480
+      : m ? m[1].split(',').reduce((s,t)=>s+(CAT_N[t.replace(/'/g,'').trim()]||0),0)
+      : 490787;
+    const det = n<=30000;
+    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6'}]);
+  }
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
@@ -65,6 +76,12 @@ eval(src+'\nglobalThis.D=D;');
   check('init populated year options', el('f-y1').options.length===2, el('f-y1').options.length);
   check('init populated communities', D.communities.length===2, D.communities.length);
 
+  // --- permit-category multi-select: built from the permitclassgroup list, Single Family hidden by default ---
+  check('init built category list', !!D.cats && D.cats.length===2, D.cats && D.cats.length);
+  check('default hides Single Family', !!D.activeCats && !D.activeCats.has('Single Family') && D.activeCats.has('Garage'), D.activeCats && [...D.activeCats]);
+  check('where() excludes Single Family by default', /permitclassgroup IN \('Garage'\)/.test(D.where()), D.where());
+
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.renderCats();   // show all categories → full-city baseline below
   await D.apply();
   console.log('CITY MODE:', D.mode, '| total:', D.total, '| badge:', el('count-badge').textContent);
   console.log('  KPI count:', el('k-count').textContent, '| cost:', el('k-cost').textContent, '| avg dti:', el('k-dti').textContent, '| completion:', el('k-comp').textContent);
@@ -139,6 +156,35 @@ eval(src+'\nglobalThis.D=D;');
   check('no error surfaced', !el('err').classList._s.has('show'));
   console.log('fetches made:', fetchLog.length);
 
+  // --- permit-category filter: select all / clear all / empty state / re-check ---
+  el('f-comm').value='';                                  // back to a city-scope query
+  D.catsAll(true); await new Promise(r=>setTimeout(r,30));
+  check('select all activates every category', D.activeCats.size===2, D.activeCats.size);
+  check('where() omits category clause when all shown', !/permitclassgroup IN/.test(D.where()), D.where());
+  check('select all stays in city mode', D.mode==='city', D.mode);
+
+  D.catsAll(false); await new Promise(r=>setTimeout(r,30));
+  check('clear all hides every category', D.activeCats.size===0, D.activeCats.size);
+  check('clear all -> no permits in scope', D.total===0, D.total);
+  check('clear all -> results hidden', el('results').style.display==='none', el('results').style.display);
+  check('clear all -> empty-state shown', el('empty-state').style.display==='', el('empty-state').style.display);
+  check('clear all -> empty copy explains categories', /categor/i.test(el('empty-text').textContent), el('empty-text').textContent);
+
+  D.toggleCatIdx(0,true); await new Promise(r=>setTimeout(r,30));  // re-check cats[0] = Single Family
+  check('re-checking a category exits the empty state', D.activeCats.has('Single Family') && D.total>0, [D.total,[...D.activeCats]]);
+  check('re-checking a category restores results', el('results').style.display==='', el('results').style.display);
+
+  // the city/detail threshold evaluates the FILTERED count: in city scope (no community),
+  // hiding the dominant category must drop the count below DETAIL_THRESHOLD and flip to detail
+  el('f-comm').value='';
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.renderCats(); await D.apply();
+  check('all categories shown -> city mode (full count)', D.mode==='city' && D.total===490787, [D.mode,D.total]);
+  D.toggleCatIdx(0,false); await new Promise(r=>setTimeout(r,30));   // hide Single Family (cats[0])
+  check('hiding the dominant category flips city -> detail on the filtered count', D.mode==='detail' && D.total===1480, [D.mode,D.total]);
+
+  D.initCats(); D.renderCats();                           // restore default (Single Family hidden)
+  check('initCats restores default hide', !D.activeCats.has('Single Family') && D.activeCats.has('Garage'), [...D.activeCats]);
+
   // --- URL state round-trip for the map view (bubbles/areas + metric) ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.
   global.location = {search:'', pathname:'/permit-explorer/', hash:'', _last:''};
@@ -155,6 +201,14 @@ eval(src+'\nglobalThis.D=D;');
   D.choro=false; D.choroMetric='cost'; D.readURL();
   check('readURL restores choro from map=areas', D.choro===true, D.choro);
   check('readURL restores metric from URL', D.choroMetric==='dti', D.choroMetric);
+
+  // permit-category URL round-trip (encode HIDDEN set; default omitted)
+  global.location.search=''; D.initCats(); D.writeURL();
+  check('writeURL omits cats at default (hide Single Family)', !/[?&]cats=/.test(global.location._last), global.location._last);
+  D.activeCats=new Set(D.cats.map(c=>c.name)); D.writeURL();      // show all
+  check('writeURL encodes cats=* when all shown', /[?&]cats=\*/.test(global.location._last), global.location._last);
+  global.location.search='?cats=Garage'; D.readURL();            // shared link hiding Garage
+  check('readURL hides the listed category', !D.activeCats.has('Garage') && D.activeCats.has('Single Family'), [...D.activeCats]);
   delete global.location; delete global.history;
 
   console.log(`\n${passes} passed, ${failures} failed`);
