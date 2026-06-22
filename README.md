@@ -1,116 +1,89 @@
 # permit-explorer
 
-Interactive tools for exploring City of Calgary building-permit data. Two
-dashboards share the same analytics:
+A live, single-page tool for exploring City of Calgary building-permit data —
+all 490K+ permits across every community, queried from Calgary's open-data API
+in your browser. One self-contained static HTML file, no backend, served at the
+site root.
 
-1. **City-wide explorer** — a live tool covering all 490K+ permits across every
-   community, querying Calgary's open-data API in your browser. Always current.
-2. **Offline community dashboard** — a single self-contained HTML file with the
-   data embedded; works without internet and is shareable by sending the file
-   (the example build ships the Harvest Hills community, 1999–2026).
+**Live at <https://krevian.com/>.**
 
 ## Features
 
-- Filters (year range, permit class, work type, status, free-text search) that
-  update every metric, chart, map point, and table row at once
+- Filters — year range, community, **permit category** (multi-select show/hide:
+  Single Family, Commercial, Two Family, …, built from the data), work type,
+  status, and free-text search — that update every metric, chart, the map, and
+  the table at once
 - KPI cards: permit count, total/median estimated cost, housing units,
   median days-to-issue, completion rate
 - Charts: yearly volume vs. construction value, permit-class mix, work type,
   monthly seasonality, top contractors, processing-speed trend, cumulative
-  neighborhood buildout, cost and days-to-issue distributions, and a
-  renovation-lifecycle analysis (years from new build to first renovation at
-  the same address)
+  buildout, cost and days-to-issue distributions, and a renovation-lifecycle
+  analysis (years from new build to first renovation at the same address)
 - Auto-computed insights that recalculate for the current filter
-- Leaflet map: community bubbles sized by permit count, with a **choropleth
-  toggle** shading communities by avg project cost, avg days-to-issue, or
-  completion rate (colour-blind-safe cividis ramp, boundaries fetched live);
-  permit-level points sized by cost and coloured by class in detail view
-- Sortable, paginated permit table
+- Leaflet **community choropleth** shading each community by avg permits/year,
+  avg project cost, avg days-to-issue, or completion rate (colour-blind-safe
+  cividis ramp, boundaries fetched live); permit-level points sized by cost and
+  coloured by class in detail view
+- Sortable, paginated permit table, shareable URL state (filters + map metric),
+  and CSV export of the current selection
 
-## Two dashboards
+With a broad filter the tool shows city totals computed by the server; narrow to
+under 30,000 permits (a community, or one year city-wide) and it switches to
+**detail view** — individual permits on the map, the records table, median
+costs, and the renovation-lifecycle analysis.
 
-1. **City-wide explorer** (`src/city_explorer.html`, also copied to `dist/`) —
-   just open it in a browser (needs internet). Queries Calgary's open-data API
-   live: all 490K+ permits, every community, always current. Aggregated city
-   view (including cost and days-to-issue distributions via server-side
-   binning); filter to under 30,000 permits (a community, or one year
-   city-wide) to unlock permit-level detail, renovation lifecycle, and
-   individual map points. Filters **and the map view** (bubbles vs. choropleth
-   and the chosen metric) are encoded in the URL, so any view can be shared or
-   bookmarked, and the current selection can be exported to CSV. The
-   community map switches between proportional **bubbles** (permit count) and a
-   **choropleth** of an intensive metric (avg project cost, avg days-to-issue,
-   or completion rate); boundaries are fetched live, and unmatched or
-   low-sample communities render as no-data.
-2. **Offline single-community dashboard** (`dist/permit_dashboard.html`) —
-   self-contained file built from a CSV export; works without internet. It is a
-   point-in-time snapshot — the header and footer show the coverage range and
-   the **"data as of"** export date it was built from — while the live city-wide
-   explorer above is the canonical, always-current view.
+## Run / build
 
-## Usage (offline dashboard)
+`src/city_explorer.html` is a self-contained static file — open it directly in a
+browser (needs internet for the live API). To produce the deployable site:
 
 ```bash
-pip install -r requirements.txt       # just pandas
-python build.py                       # uses newest CSV in data/raw/
-python build.py path/to/export.csv    # or an explicit export
+npm run build      # python build.py  ->  dist/index.html (+ dist/_headers)
 ```
 
-Open `dist/permit_dashboard.html` in any browser.
+`build.py` is standard-library Python (no dependencies): it publishes the
+explorer as `dist/index.html` so it serves at the site root, and copies the
+Cloudflare [`_headers`](_headers) file alongside it.
 
-## Updating the data
+## Hosting
 
-Download a fresh export from Calgary's open-data portal, drop it in
-`data/raw/`, and re-run `python build.py`. The coverage range and the "data as
-of" date are derived automatically at build time (the date is read from the
-export's `YYYYMMDD` filename, falling back to its file modification time), so
-they never need hand-editing and can't go stale.
+Deployed on **Cloudflare Pages** (Git integration). The explorer is the site
+root (`index.html`); there is no second page or second URL.
 
-## Hosting the city-wide explorer
-
-`src/city_explorer.html` is a static file that talks to the live API, so it can
-be hosted anywhere. This repo deploys to **Cloudflare Pages**.
-
-`deploy/build-site.sh` assembles the deployable site into `_site/` — the explorer
-as `index.html`, the offline dashboard, and a [`_headers`](_headers) file with
-security headers plus a Content-Security-Policy scoped to the app's CDN/API
-origins. It is a pure copy step (no build tools, no secrets): the explorer needs
-no build, and the offline dashboard (`dist/permit_dashboard.html`) is generated by
-`build.py` and committed. Re-run `python build.py` and commit `dist/` whenever the
-data export changes.
-
-**Cloudflare Pages project settings** — connect this repo, then set:
+**Cloudflare Pages project settings:**
 
 | Setting | Value |
 |---|---|
-| Build command | `bash deploy/build-site.sh` |
-| Build output directory | `_site` |
+| Build command | `python build.py` |
+| Build output directory | `dist` |
 | Framework preset | None |
 
-Cloudflare rebuilds and redeploys on every push to the production branch.
+`dist/` is committed, so the site serves correctly even if the build step is
+skipped. [`_headers`](_headers) adds security headers and a Content-Security-Policy
+scoped to the app's CDN/API origins; `build.py` copies it into `dist/`.
 
 ## Testing
 
-Headless harnesses (Node) self-extract the dashboard scripts, stub the DOM /
-Chart.js / Leaflet, and assert KPIs, charts, filtering, pagination, and the
-request-race guard. They exit non-zero on any failed assertion.
+A headless harness (Node) self-extracts the explorer's inline script, stubs the
+DOM / Chart.js / Leaflet, and asserts KPIs, charts, filtering, the permit-category
+filter, the choropleth (incl. the avg-permits/year metric and boundary-load
+recovery), pagination, URL state, and the request-race guard. It exits non-zero
+on any failed assertion.
 
 ```bash
-python build.py    # offline harness checks the built dist file
-npm test           # runs test/harness.js and test/city_harness.js
+npm test           # node test/city_harness.js
 ```
 
-CI (`.github/workflows/ci.yml`) runs the build and both harnesses on every push
-and pull request.
+CI (`.github/workflows/ci.yml`) runs the build and the harness on every push and
+pull request.
 
 `npm test` is deterministic and offline (canned API responses), so it can't
 notice if Calgary changes the live dataset. A separate **live-API smoke test**
-(`test/smoke.js`, run with `npm run smoke`) hits the real c2es-76ed endpoint and
-verifies every field and SoQL feature the city-wide explorer depends on still
-works — it self-extracts the field list and endpoint straight from
-`src/city_explorer.html` so it can't drift. A scheduled workflow
-(`.github/workflows/smoke.yml`) runs it daily and on demand, emailing on
-failure so a silent upstream break gets noticed.
+(`test/smoke.js`, `npm run smoke`) hits the real c2es-76ed endpoint and verifies
+every field and SoQL feature the explorer depends on still works — it
+self-extracts the field list and endpoint from `src/city_explorer.html` so it
+can't drift. A scheduled workflow (`.github/workflows/smoke.yml`) runs it daily
+and on demand, emailing on failure.
 
 ## Data & attribution
 
@@ -126,15 +99,13 @@ affiliated with or endorsed by The City of Calgary.
 ## Project layout
 
 ```
-build.py                build script: CSV -> dist/permit_dashboard.html
-src/template.html       offline dashboard UI (HTML/CSS/JS, __DATA__ placeholder)
-src/city_explorer.html  city-wide live-API explorer (no build step; copied to dist/)
-data/raw/               raw CSV exports (input; ships one Harvest Hills export)
-dist/                   dashboards (open these in a browser)
-test/                   headless Node verification harnesses
-docs/                   design briefs and project documentation
-deploy/build-site.sh    assembles _site/ for Cloudflare Pages
+build.py                publishes src/city_explorer.html as dist/index.html (+ _headers)
+src/city_explorer.html  the explorer (self-contained HTML/CSS/JS; no framework)
+dist/                   deployable output (index.html + _headers); served at the site root
 _headers                Cloudflare security headers + CSP
+test/city_harness.js    headless verification harness
+test/smoke.js           live-API smoke test
+docs/                   design briefs and project documentation
 .github/workflows/      CI (tests) and the daily live-API smoke test
 TASKS.md                development task tracker
 ```

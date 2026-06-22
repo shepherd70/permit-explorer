@@ -120,9 +120,10 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .field select:hover,.field input:hover{border-color:var(--accent)}
 .field select option{background:var(--surface)}
 .field input::placeholder{color:var(--text-3)}
-.field.grow input{min-width:185px}
+.field.grow input,.field.grow select{min-width:185px}
 .field.search{flex:1 1 200px}
 .field.search input{width:100%}
+.search-hint{font-size:11.5px;color:var(--text-3);margin-top:3px;line-height:1.3}
 .btn{font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;border-radius:var(--r-xs);padding:9px 16px;transition:background .15s,border-color .15s,color .15s}
 .btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border-strong)}
 .btn-ghost:hover{color:var(--accent);border-color:var(--accent)}
@@ -328,10 +329,10 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
     <div class="toolbar-row">
       <div class="field"><label for="f-y1">From year</label><select id="f-y1" onchange="D.apply()"></select></div>
       <div class="field"><label for="f-y2">To year</label><select id="f-y2" onchange="D.apply()"></select></div>
-      <div class="field grow"><label for="f-comm">Community</label><input id="f-comm" list="comm-list" placeholder="All communities" onchange="D.apply()"><datalist id="comm-list"></datalist></div>
+      <div class="field grow"><label for="f-comm">Community</label><select id="f-comm" onchange="D.apply()"><option value="">All communities</option></select></div>
       <div class="field"><label for="f-work">Work type</label><select id="f-work" onchange="D.apply()"><option value="all">All work</option></select></div>
       <div class="field"><label for="f-status">Status</label><select id="f-status" onchange="D.apply()"><option value="all">All statuses</option></select></div>
-      <div class="field search"><label for="f-q">Search</label><input id="f-q" placeholder="address, contractor, keyword…" onchange="D.apply()"></div>
+      <div class="field search"><label for="f-q">Search</label><input id="f-q" placeholder="address, contractor, keyword…" onchange="D.onSearch()"><span class="search-hint" id="search-hint" style="display:none">Pick a community or year above to search within it</span></div>
       <button class="btn btn-ghost" type="button" onclick="D.reset()">Reset</button>
       <div class="toolbar-meta" aria-live="polite">
         <span class="count" id="count-badge">loading…</span>
@@ -455,7 +456,6 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 <script>
 const API = 'https://data.calgary.ca/resource/c2es-76ed.json';
 const DETAIL_THRESHOLD = 30000;
-const DEFAULT_HIDE = 'Single Family';   // permit category hidden by default (dominates the data / clutters the map)
 const C = {blue:'#0072B2',amber:'#E69F00',green:'#009E73',red:'#D55E00',pink:'#CC79A7',sky:'#56B4E9',purple:'#6A4C93',gray:'#8C8C8C'};
 const COLORS = [C.blue,C.amber,C.green,C.red,C.pink,C.sky,C.purple,C.gray,'#117733','#88CCEE'];
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -535,7 +535,7 @@ const NODATA_FILL='#d7dde3', NODATA_FILL_DARK='#2b3440';
 const D = {
   mode:'city', pageNum:0, pageSize:25, total:0,
   sortCol:'applieddate', sortDir:'desc',
-  stats:null, rows:null, renovLags:[], communities:[], cats:null, activeCats:null,
+  stats:null, rows:null, allRows:null, renovLags:[], communities:[], cats:null, activeCats:null,
   charts:{}, map:null, layer:null, tileLayer:null, _busy:0,
   _seq:0, _ac:null, _tblSeq:0, _acTbl:null,
   choroMetric:'ppy', boundaries:null, _bPromise:null,
@@ -564,7 +564,7 @@ const D = {
     const st=this.val('f-status'); if(st) w.push(`statuscurrent = '${sq(st)}'`);
     return w.join(' AND ');
   },
-  qParam(){ const q=this.val('f-q'); return q?{q}:{}; },
+  qParam(){ return {}; },   // free-text search is applied CLIENT-SIDE now (Socrata $q full-text is ~18s); never sent to the server. See onSearch()/showDetail().
 
   async init(){
     if(typeof Chart==='undefined' || typeof L==='undefined'){
@@ -588,8 +588,8 @@ const D = {
       ys.forEach(y=>{y1.add(new Option(y,y));y2.add(new Option(y,y));});
       y1.value=ys[0]; y2.value=ys[ys.length-1];
       this.communities = comms.map(r=>({name:r.k, n:+r.n, lat:+r.lat, lng:+r.lng, cost:+r.c||0}));
-      const dl=document.getElementById('comm-list');
-      this.communities.forEach(c=>{const o=document.createElement('option');o.value=c.name;dl.appendChild(o);});
+      const cs=document.getElementById('f-comm');                  // populate the community dropdown A→Z (after the "All communities" option)
+      [...this.communities].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0).forEach(c=>cs.add(new Option(c.name,c.name)));
       const fill=(id,list)=>{const sel=document.getElementById(id);list.forEach(r=>sel.add(new Option(`${r.k} (${(+r.n).toLocaleString()})`,r.k)));};
       fill('f-work',works); fill('f-status',statuses);
       this.cats = classes.map(r=>({name:r.k, n:+r.n}));   // distinct permitclassgroup values → category checkboxes
@@ -613,9 +613,7 @@ const D = {
   // --- permit-category multi-select (replaces the old single-class dropdown) ---
   initCats(){
     if(!this.cats) return;
-    const all=this.cats.map(c=>c.name);
-    this.activeCats=new Set(all);
-    if(this.activeCats.has(DEFAULT_HIDE) && this.activeCats.size>1) this.activeCats.delete(DEFAULT_HIDE);
+    this.activeCats=new Set(this.cats.map(c=>c.name));   // every category checked by default
   },
   renderCats(){
     const list=document.getElementById('cat-list'); if(!list) return;
@@ -687,12 +685,9 @@ const D = {
     const comm=document.getElementById('f-comm').value.trim(); if(comm) p.set('comm',comm);
     ['work','status'].forEach(k=>{ const v=document.getElementById('f-'+k).value; if(v && v!=='all') p.set(k,v); });
     const q=document.getElementById('f-q').value.trim(); if(q) p.set('q',q);
-    if(this.cats && this.activeCats){                               // encode the HIDDEN categories; default (hide DEFAULT_HIDE) is omitted for clean links
-      const all=this.cats.map(c=>c.name);
-      const hidden=all.filter(n=>!this.activeCats.has(n));
-      const defHidden=(all.indexOf(DEFAULT_HIDE)>=0 && all.length>1)?[DEFAULT_HIDE]:[];
-      const isDefault = hidden.length===defHidden.length && hidden.every(n=>defHidden.indexOf(n)>=0);
-      if(!isDefault) p.set('cats', hidden.length?hidden.join(','):'*');
+    if(this.cats && this.activeCats){                               // encode the HIDDEN categories; the default (all shown) is omitted for clean links
+      const hidden=this.cats.map(c=>c.name).filter(n=>!this.activeCats.has(n));
+      if(hidden.length) p.set('cats', hidden.join(','));
     }
     if(this.choroMetric && this.choroMetric!=='ppy') p.set('metric',this.choroMetric);   // default metric (ppy) omitted for clean links
     const qs=p.toString();
@@ -770,7 +765,7 @@ const D = {
     const raw = await soql({select:fields, limit:String(DETAIL_THRESHOLD), order:'applieddate DESC', ...(where?{where}:{}), ...this.qParam()}, signal);
     if(seq!=null && seq!==this._seq) return;       // superseded while loading
     this.mode='detail';
-    this.rows = raw.map(r=>({
+    this.allRows = raw.map(r=>({                    // full scope (year/community/category); search filters this CLIENT-SIDE
       id:r.permitnum, status:r.statuscurrent||'Unknown',
       applied:r.applieddate?r.applieddate.slice(0,10):null,
       year:r.applieddate?+r.applieddate.slice(0,4):null,
@@ -783,6 +778,26 @@ const D = {
       addr:r.originaladdress, community:r.communityname,
       lat:r.latitude==null?null:+r.latitude, lng:r.longitude==null?null:+r.longitude
     }));
+    this.showDetail();     // apply the client-side search filter, compute stats, render
+  },
+
+  // Free-text search runs CLIENT-SIDE over the loaded scope rows — instant, no refetch (Socrata $q is ~18s).
+  // Re-run by onSearch() when the search box changes; available only in detail view (city view has no rows to filter).
+  searchTerm(){ const v=this.val('f-q'); return v?String(v).trim().toLowerCase():''; },
+  rowMatches(d,term){ return (d.id+'\n'+(d.addr||'')+'\n'+(d.contractor||'')+'\n'+(d.desc||'')+'\n'+(d.community||'')+'\n'+(d.cls||'')+'\n'+(d.work||'')+'\n'+(d.status||'')).toLowerCase().includes(term); },
+  onSearch(){
+    this.pageNum=0; this.writeURL();
+    if(this.mode==='detail' && this.allRows) this.showDetail();   // instant client-side re-filter
+    else this.updateSearchHint();                                 // city view: prompt to narrow first
+  },
+  updateSearchHint(){
+    const h=document.getElementById('search-hint'); if(!h||!h.style) return;
+    h.style.display = (this.mode==='city' && this.searchTerm()) ? '' : 'none';
+  },
+  showDetail(){
+    const term=this.searchTerm();
+    this.rows = term ? this.allRows.filter(d=>this.rowMatches(d,term)) : this.allRows;
+    this.total = this.rows.length;
     const f=this.rows;
     const g={};
     f.forEach(d=>{if(d.year==null)return;g[d.year]=g[d.year]||{n:0,c:0,u:0,ds:[]};const e=g[d.year];e.n++;e.c+=d.cost||0;e.u+=d.units;if(d.dti!=null)e.ds.push(d.dti);});
@@ -872,7 +887,7 @@ const D = {
       set(this.charts.costh,COST_BINS.map(b=>b.l),s.costh||[]);
       set(this.charts.dtih,DTI_BINS.map(b=>b.l),s.dtih||[]);
     }
-    this.updateMap(); this.insights();
+    this.updateMap(); this.insights(); this.updateSearchHint();
   },
 
   buildCharts(){
