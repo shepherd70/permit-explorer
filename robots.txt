@@ -1,0 +1,6 @@
+# https://krevian.com/ — City of Calgary building-permit explorer
+# All content is public and crawlable.
+User-agent: *
+Allow: /
+
+Sitemap: https://krevian.com/sitemap.xml
