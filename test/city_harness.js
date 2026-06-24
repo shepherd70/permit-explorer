@@ -47,6 +47,8 @@ global.fetch=async(url)=>{
     const det = n<=30000;
     return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6'}]);
   }
+  if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done'))   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
+    return json([{k:'2018',n:'500',c:'1.0e8',u:'200',dsum:'10000',dcnt:'480',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',u:'250',dsum:'13000',dcnt:'580',done:'550',openn:'25'}]);
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
@@ -224,6 +226,20 @@ eval(src+'\nglobalThis.D=D;');
   el('f-q').value=''; D.onSearch();
   check('clearing city search hides the hint', el('search-hint').style.display==='none', el('search-hint').style.display);
 
+  // --- compare communities (city-view panel, independent of the main community filter) ---
+  D.cmpSel=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; D.renderCmpChips(); await D.cmpRun();
+  console.log('COMPARE: keys:', Object.keys(D.cmpData), '| HH n:', D.cmpData['HARVEST HILLS']&&D.cmpData['HARVEST HILLS'].n, '| chart series:', D.charts.compare.data.datasets.length);
+  check('compare fetched both communities', !!D.cmpData['DOWNTOWN COMMERCIAL CORE'] && !!D.cmpData['HARVEST HILLS'], Object.keys(D.cmpData));
+  check('compare totals summed across years (500+600)', D.cmpData['HARVEST HILLS'].n===1100, D.cmpData['HARVEST HILLS'].n);
+  check('compare completion = done / resolved', Math.abs(D.cmpData['HARVEST HILLS'].comp-(1000/(1100-45)))<1e-6, D.cmpData['HARVEST HILLS'].comp);
+  check('compare chart has one line per community', D.charts.compare.data.datasets.length===2, D.charts.compare.data.datasets.length);
+  check('compare table rendered', /<table class="cmp"/.test(el('cmp-table').innerHTML), el('cmp-table').innerHTML.slice(0,40));
+  check('compare card visible in city mode', el('card-compare').style.display==='', el('card-compare').style.display);
+  D.cmpRemove('HARVEST HILLS');
+  check('compare remove leaves the other community', D.cmpSel.length===1 && D.cmpSel[0]==='DOWNTOWN COMMERCIAL CORE', D.cmpSel);
+  D.cmpClear();
+  check('compare clear empties selection and chart', D.cmpSel.length===0 && D.charts.compare.data.datasets.length===0, [D.cmpSel.length,D.charts.compare.data.datasets.length]);
+
   // --- URL state round-trip for the map shading metric ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.
   global.location = {search:'', pathname:'/permit-explorer/', hash:'', _last:''};
@@ -247,6 +263,16 @@ eval(src+'\nglobalThis.D=D;');
   check('writeURL encodes the hidden category', /[?&]cats=Single(\+|%20)Family/.test(global.location._last), global.location._last);
   global.location.search='?cats=Garage'; D.readURL();            // shared link hiding Garage
   check('readURL hides the listed category', !D.activeCats.has('Garage') && D.activeCats.has('Single Family'), [...D.activeCats]);
+
+  // compare-communities URL round-trip (omitted when none selected)
+  global.location.search=''; D.cmpSel=[]; D.writeURL();
+  check('writeURL omits cmp when none selected', !/[?&]cmp=/.test(global.location._last), global.location._last);
+  D.cmpSel=['MAHOGANY','SETON']; D.writeURL();
+  check('writeURL encodes the compared communities', /[?&]cmp=MAHOGANY%2CSETON/.test(global.location._last), global.location._last);
+  global.location.search='?cmp=ACADIA,BELTLINE'; D.cmpSel=[]; D.readURL();
+  check('readURL restores the compared communities', D.cmpSel.length===2 && D.cmpSel[0]==='ACADIA', D.cmpSel);
+  D.cmpSel=[];                                                   // don't leak into later state
+
   delete global.location; delete global.history;
 
   console.log(`\n${passes} passed, ${failures} failed`);

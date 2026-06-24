@@ -210,6 +210,25 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .choro-metric{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text-2)}
 .choro-metric select{font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--border-strong);border-radius:var(--r-sm);background:var(--surface);color:var(--text)}
 
+/* compare communities */
+.cmp-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
+.cmp-controls select{font:inherit;font-size:13.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--r-xs);padding:8px 10px}
+.cmp-controls select:hover{border-color:var(--accent)}
+.cmp-chips{display:flex;flex-wrap:wrap;gap:8px}
+.cmp-chip{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:#fff;border-radius:999px;padding:5px 6px 5px 12px}
+.cmp-chip .sw{width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,.9);flex:none}
+.cmp-chip button{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,.28);color:inherit;cursor:pointer;font-size:14px;line-height:1}
+.cmp-chip button:hover{background:rgba(255,255,255,.45)}
+.cmp-empty{font-size:13.5px;color:var(--text-2)}
+.cmp-table-wrap{overflow-x:auto;margin-bottom:var(--s5)}
+table.cmp{width:100%;border-collapse:collapse;font-size:13px}
+table.cmp th,table.cmp td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+table.cmp th:first-child,table.cmp td:first-child{text-align:left;color:var(--text-2);font-variant-numeric:normal}
+table.cmp thead th{color:var(--text);font-weight:700;border-bottom:1px solid var(--border-strong)}
+table.cmp tbody tr:last-child td{border-bottom:none}
+table.cmp td.best{color:var(--accent);font-weight:700}
+table.cmp .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
 /* locked overlay */
 .overlay{position:absolute;inset:0;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(1px);
   display:none;align-items:center;justify-content:center;border-radius:var(--r);z-index:5;padding:24px;text-align:center}
@@ -396,6 +415,22 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
       <div class="map-legend" id="map-legend"></div>
     </section>
 
+    <section class="card" id="card-compare">
+      <div class="card-head"><h3>Compare communities</h3><span class="hint">— add 2–4 to compare side by side, for the current years &amp; categories</span></div>
+      <div class="cmp-controls">
+        <select id="cmp-add" aria-label="Add a community to compare" onchange="D.cmpAdd(this.value); this.value='';">
+          <option value="">Add a community…</option>
+        </select>
+        <div class="cmp-chips" id="cmp-chips"></div>
+        <button class="btn btn-ghost" type="button" id="cmp-clear" style="display:none" onclick="D.cmpClear()">Clear</button>
+      </div>
+      <div id="cmp-empty" class="cmp-empty">Pick communities above to compare their permit volume, cost, and processing speed side by side.</div>
+      <div id="cmp-body" style="display:none">
+        <div class="cmp-table-wrap"><div id="cmp-table"></div></div>
+        <div class="ch tall"><canvas id="c-compare" role="img" aria-label="Permits per year, by community"></canvas></div>
+      </div>
+    </section>
+
     <section class="card">
       <div class="card-head"><h3>Permit volume &amp; construction value by year</h3><span class="hint">— bars: permits applied; line: total est. cost</span></div>
       <div class="ch tall"><canvas id="c-year" role="img" aria-label="Permits applied and estimated construction value by year"></canvas></div>
@@ -539,6 +574,7 @@ const D = {
   charts:{}, map:null, layer:null, tileLayer:null, _busy:0,
   _seq:0, _ac:null, _tblSeq:0, _acTbl:null,
   choroMetric:'ppy', boundaries:null, _bPromise:null,
+  cmpSel:[], cmpData:{}, _cmpSeq:0, _cmpAc:null,
 
   busy(on){ this._busy+=on?1:-1; document.getElementById('loading').classList.toggle('on',this._busy>0); },
   error(msg){ const e=document.getElementById('err'); document.getElementById('err-text').textContent='Couldn’t load data: '+msg; e.classList.add('show'); },
@@ -588,8 +624,11 @@ const D = {
       ys.forEach(y=>{y1.add(new Option(y,y));y2.add(new Option(y,y));});
       y1.value=ys[0]; y2.value=ys[ys.length-1];
       this.communities = comms.map(r=>({name:r.k, n:+r.n, lat:+r.lat, lng:+r.lng, cost:+r.c||0}));
+      const sortedComms=[...this.communities].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
       const cs=document.getElementById('f-comm');                  // populate the community dropdown A→Z (after the "All communities" option)
-      [...this.communities].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0).forEach(c=>cs.add(new Option(c.name,c.name)));
+      sortedComms.forEach(c=>cs.add(new Option(c.name,c.name)));
+      const ca=document.getElementById('cmp-add');                 // same list feeds the "compare communities" picker
+      if(ca&&ca.add) sortedComms.forEach(c=>ca.add(new Option(c.name,c.name)));
       const fill=(id,list)=>{const sel=document.getElementById(id);list.forEach(r=>sel.add(new Option(`${r.k} (${(+r.n).toLocaleString()})`,r.k)));};
       fill('f-work',works); fill('f-status',statuses);
       this.cats = classes.map(r=>({name:r.k, n:+r.n}));   // distinct permitclassgroup values → category checkboxes
@@ -675,6 +714,7 @@ const D = {
     }
     const m=p.get('metric'); if(m && CHORO_METRICS[m]) this.choroMetric=m;   // (legacy ?map=areas links are ignored — the map is always a choropleth)
     const msel=document.getElementById('choro-metric'); if(msel) msel.value=this.choroMetric;
+    if(p.has('cmp')){ this.cmpSel=p.get('cmp').split(',').map(s=>s.trim()).filter(Boolean).slice(0,4); this.renderCmpChips(); }
   },
   writeURL(){
     if(typeof location==='undefined' || typeof history==='undefined' || !history.replaceState || typeof URLSearchParams==='undefined') return;
@@ -690,6 +730,7 @@ const D = {
       if(hidden.length) p.set('cats', hidden.join(','));
     }
     if(this.choroMetric && this.choroMetric!=='ppy') p.set('metric',this.choroMetric);   // default metric (ppy) omitted for clean links
+    if(this.cmpSel && this.cmpSel.length) p.set('cmp', this.cmpSel.join(','));            // compared communities (omitted when none)
     const qs=p.toString();
     try{ history.replaceState(null,'', location.pathname+(qs?('?'+qs):'')+(location.hash||'')); }catch(e){}
   },
@@ -757,6 +798,7 @@ const D = {
       head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d}
     };
     this.render();
+    if(this.cmpSel && this.cmpSel.length) this.cmpRun();   // keep the compare panel in sync with the current filters
     await this.cityTable();
   },
 
@@ -837,6 +879,7 @@ const D = {
     document.getElementById('mode-badge').className = 'mode '+(detail?'detail':'city');
     document.getElementById('count-badge').innerHTML = `<span class="num tnum">${fmtN(this.total)}</span> permits in scope`;
     document.getElementById('card-renov').classList.toggle('locked',!detail);
+    { const cc=document.getElementById('card-compare'); if(cc&&cc.style) cc.style.display=detail?'none':''; }   // compare is a city-view panel
     document.getElementById('costh-hint').textContent = detail?'':(s.costh?`— ${fmtN(s.costh.reduce((a,b)=>a+b,0))} permits with cost data`:'— unavailable right now');
     const h=s.head;
     document.getElementById('k-count').textContent=fmtN(h.n);
@@ -919,6 +962,8 @@ const D = {
       options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
     this.charts.renov=new Chart(document.getElementById('c-renov'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:C.purple+'CC',borderRadius:4}]},
       options:{...base,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'years until first renovation'}},y:{beginAtZero:true}}}});
+    this.charts.compare=new Chart(document.getElementById('c-compare'),{type:'line',data:{labels:[],datasets:[]},
+      options:{...base,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtN(c.parsed.y)} permits`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'permits / year'}}}}});
   },
 
   buildMap(){
@@ -1032,6 +1077,109 @@ const D = {
   },
   retryBoundaries(){ this.clearError(); this.updateMap(); },   // boundaries/_bPromise are null after a failure, so updateMap re-enters the load
   setChoroMetric(m){ if(CHORO_METRICS[m]) this.choroMetric=m; this.writeURL(); this.updateMap(); },
+
+  // --- compare communities: a city-view panel that fetches each selected community independently ---
+  cmpColor(i){ return COLORS[i%COLORS.length]; },
+  cmpAdd(name){
+    name=(name||'').trim();
+    if(!name || this.cmpSel.includes(name) || this.cmpSel.length>=4) return;
+    this.cmpSel.push(name); this.renderCmpChips(); this.writeURL(); this.cmpRun();
+  },
+  cmpRemove(name){
+    this.cmpSel=this.cmpSel.filter(n=>n!==name); delete this.cmpData[name];
+    this.renderCmpChips(); this.writeURL();
+    if(this.cmpSel.length) this.cmpRun(); else this.renderCompare();
+  },
+  cmpClear(){
+    this.cmpSel=[]; this.cmpData={}; this._cmpSeq++;                  // bump seq so any in-flight cmpRun is discarded
+    if(this._cmpAc){ try{ this._cmpAc.abort(); }catch(e){} this._cmpAc=null; }
+    this.renderCmpChips(); this.writeURL(); this.renderCompare();
+  },
+  renderCmpChips(){
+    const wrap=document.getElementById('cmp-chips'); if(!wrap) return;
+    wrap.innerHTML=this.cmpSel.map((n,i)=>`<span class="cmp-chip" style="background:${this.cmpColor(i)}"><span class="sw"></span>${esc(n)}<button type="button" aria-label="Remove ${esc(n).replace(/"/g,'&quot;')}" onclick="D.cmpRemove('${esc(n).replace(/'/g,"\\'")}')">×</button></span>`).join('');
+    const clr=document.getElementById('cmp-clear'); if(clr&&clr.style) clr.style.display=this.cmpSel.length?'':'none';
+  },
+  // filters scoped to the current year/category/work/status — but for the GIVEN community (ignores the main f-comm)
+  cmpWhere(name){
+    const w=[];
+    const y1=this.val('f-y1'), y2=this.val('f-y2');
+    if(y1) w.push(`applieddate >= '${y1}-01-01T00:00:00'`);
+    if(y2) w.push(`applieddate <= '${y2}-12-31T23:59:59'`);
+    w.push(`upper(communityname) = '${sq(String(name).toUpperCase())}'`);
+    if(this.cats && this.activeCats){
+      const n=this.activeCats.size, total=this.cats.length;
+      if(n===0) w.push("permitclassgroup IN ('')");
+      else if(n<total){ const inList=this.cats.filter(c=>this.activeCats.has(c.name)).map(c=>`'${sq(c.name)}'`).join(','); w.push(`permitclassgroup IN (${inList})`); }
+    }
+    const work=this.val('f-work'); if(work) w.push(`workclass = '${sq(work)}'`);
+    const st=this.val('f-status'); if(st) w.push(`statuscurrent = '${sq(st)}'`);
+    return w.join(' AND ');
+  },
+  async cmpRun(){
+    if(!this.cmpSel.length){ this.renderCompare(); return; }
+    const seq=++this._cmpSeq;
+    if(this._cmpAc){ try{ this._cmpAc.abort(); }catch(e){} }
+    const ac=(typeof AbortController!=='undefined')?new AbortController():null;
+    this._cmpAc=ac; const signal=ac&&ac.signal;
+    const span=Math.max(1,(+this.val('f-y2')||0)-(+this.val('f-y1')||0)+1);
+    const open="statuscurrent in ('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold')";
+    this.busy(true);
+    try{
+      const names=this.cmpSel.slice();
+      const results=await Promise.all(names.map(nm=>soql({
+        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, sum(date_diff_d(issueddate,applieddate)) as dsum, sum(case(issueddate IS NOT NULL,1,true,0)) as dcnt, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
+        where:this.cmpWhere(nm), group:'k', order:'k'
+      },signal).catch(e=>{ if(isAbort(e)) throw e; return null; })));
+      if(seq!==this._cmpSeq) return;                              // superseded by a newer selection/filter
+      const data={};
+      names.forEach((nm,idx)=>{
+        const rows=(results[idx]||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,done:+r.done||0,openn:+r.openn||0}));
+        const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,u:0,dsum:0,dcnt:0,done:0,openn:0});
+        data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.n?t.c/t.n:null, dti:t.dcnt?t.dsum/t.dcnt:null,
+          comp:(t.n-t.openn)>0?t.done/(t.n-t.openn):null, ppy:t.n/span };
+      });
+      this.cmpData=data; this.renderCompare();
+    }catch(e){ if(!isAbort(e)&&seq===this._cmpSeq) this.error(e.message); }
+    finally{ if(seq===this._cmpSeq) this._cmpAc=null; this.busy(false); }
+  },
+  renderCompare(){
+    const empty=document.getElementById('cmp-empty'), body=document.getElementById('cmp-body');
+    const names=this.cmpSel.filter(n=>this.cmpData[n]);
+    if(!names.length){
+      if(empty&&empty.style) empty.style.display='';
+      if(body&&body.style) body.style.display='none';
+      if(this.charts.compare){ this.charts.compare.data.labels=[]; this.charts.compare.data.datasets=[]; try{this.charts.compare.update('none');}catch(e){} }
+      return;
+    }
+    if(empty&&empty.style) empty.style.display='none';
+    if(body&&body.style) body.style.display='';
+    const rows=[
+      {l:'Permits',            f:d=>d.n,       fmt:fmtN,                                     best:'max'},
+      {l:'Total est. cost',    f:d=>d.c,       fmt:fmt$,                                     best:'max'},
+      {l:'Avg cost / permit',  f:d=>d.avgCost, fmt:fmt$,                                     best:'max'},
+      {l:'Avg days to issue',  f:d=>d.dti,     fmt:v=>v==null?'—':Math.round(v)+' d',        best:'min'},
+      {l:'Completion rate',    f:d=>d.comp,    fmt:v=>v==null?'—':Math.round(v*100)+'%',     best:'max'},
+      {l:'Housing units',      f:d=>d.u,       fmt:fmtN,                                     best:'max'},
+      {l:'Avg permits / year', f:d=>d.ppy,     fmt:v=>v==null?'—':(v>=10?Math.round(v).toLocaleString():v.toFixed(1)), best:'max'}
+    ];
+    let h='<table class="cmp"><thead><tr><th>Metric</th>';
+    names.forEach(nm=>{ h+=`<th><span class="sw" style="background:${this.cmpColor(this.cmpSel.indexOf(nm))}"></span>${esc(nm)}</th>`; });
+    h+='</tr></thead><tbody>';
+    rows.forEach(r=>{
+      const vals=names.map(nm=>r.f(this.cmpData[nm]));
+      const nums=vals.filter(v=>v!=null&&!isNaN(v));
+      const best=nums.length>1?(r.best==='min'?Math.min(...nums):Math.max(...nums)):null;
+      h+=`<tr><td>${r.l}</td>`;
+      vals.forEach(v=>{ h+=`<td class="${best!=null&&v===best?'best':''}">${r.fmt(v)}</td>`; });
+      h+='</tr>';
+    });
+    document.getElementById('cmp-table').innerHTML=h+'</tbody></table>';
+    const years=[...new Set(names.flatMap(nm=>this.cmpData[nm].yr.map(r=>r.k)))].sort((a,b)=>a-b);
+    const ds=names.map(nm=>{ const col=this.cmpColor(this.cmpSel.indexOf(nm)), m={}; this.cmpData[nm].yr.forEach(r=>m[r.k]=r.n);
+      return {label:nm, data:years.map(y=>m[y]||0), borderColor:col, backgroundColor:col+'22', borderWidth:2, tension:.3, pointRadius:2, fill:false}; });
+    if(this.charts.compare){ this.charts.compare.data.labels=years; this.charts.compare.data.datasets=ds; try{this.charts.compare.update('none');}catch(e){} }
+  },
   drill(name){ document.getElementById('f-comm').value=name; this.map.closePopup(); this.apply(); },
 
   syncCharts(){

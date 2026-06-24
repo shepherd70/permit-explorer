@@ -24,8 +24,11 @@ site root.
   avg project cost, avg days-to-issue, or completion rate (colour-blind-safe
   cividis ramp, boundaries fetched live); permit-level points sized by cost and
   coloured by class in detail view
-- Sortable, paginated permit table, shareable URL state (filters + map metric),
-  and CSV export of the current selection
+- **Compare communities** — pick 2–4 and see permits, cost, processing speed and
+  completion side by side (a metrics table + a permits-by-year chart), for the
+  current filters
+- Sortable, paginated permit table, shareable URL state (filters + map metric +
+  compared communities), and CSV export of the current selection
 
 With a broad filter the tool shows city totals computed by the server; narrow to
 under 30,000 permits (a community, or one year city-wide) and it switches to
@@ -67,8 +70,8 @@ scoped to the app's CDN/API origins; `build.py` copies it into `dist/`.
 A headless harness (Node) self-extracts the explorer's inline script, stubs the
 DOM / Chart.js / Leaflet, and asserts KPIs, charts, filtering, the permit-category
 filter, the choropleth (incl. the avg-permits/year metric and boundary-load
-recovery), pagination, URL state, and the request-race guard. It exits non-zero
-on any failed assertion.
+recovery), community comparison, pagination, URL state, and the request-race
+guard. It exits non-zero on any failed assertion.
 
 ```bash
 npm test           # node test/city_harness.js
