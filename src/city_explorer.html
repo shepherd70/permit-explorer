@@ -112,7 +112,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:var(--s5)}
 @media(min-width:920px){.toolbar{position:sticky;top:0;z-index:60;border-radius:0 0 var(--r) var(--r);
   border-top:none;box-shadow:var(--shadow-lg);backdrop-filter:saturate(1.1)}}
-.toolbar-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px}
+.toolbar-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;position:relative}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .field label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
 .field select,.field input{font-family:inherit;font-size:13.5px;color:var(--text);background:var(--surface-2);
@@ -138,11 +138,19 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .mode.city::before{background:var(--accent)}
 .mode.detail{background:rgba(26,127,75,.13);color:var(--pos)}
 .mode.detail::before{background:var(--pos)}
-.toolbar-help{margin-top:12px;font-size:12.5px;color:var(--text-3);display:flex;gap:7px;align-items:flex-start}
-.toolbar-help svg{width:15px;height:15px;flex:none;margin-top:1px;color:var(--text-3)}
 
-/* permit-category multi-select */
-.catbar{margin-top:14px;padding-top:14px;border-top:1px solid var(--border)}
+/* permit-category multi-select (a dropdown, so the checkbox grid stays out of the sticky bar) */
+.catdd>summary{display:flex;align-items:center;gap:7px;list-style:none;cursor:pointer;user-select:none;
+  font-family:inherit;font-size:13.5px;font-weight:600;color:var(--text);background:var(--surface-2);
+  border:1px solid var(--border-strong);border-radius:var(--r-xs);padding:8px 12px;transition:border-color .15s}
+.catdd>summary::-webkit-details-marker{display:none}
+.catdd>summary:hover{border-color:var(--accent)}
+.catdd>summary .chev{color:var(--text-3);transition:transform .2s}
+.catdd>summary .chev svg{width:14px;height:14px;display:block}
+.catdd[open]>summary .chev{transform:rotate(180deg)}
+.catdd-panel{position:absolute;left:0;top:calc(100% + 8px);z-index:70;width:min(560px,90vw);max-width:100%;
+  max-height:min(60vh,480px);overflow-y:auto;background:var(--surface);border:1px solid var(--border-strong);
+  border-radius:var(--r-sm);box-shadow:var(--shadow-lg);padding:14px 16px}
 .catbar-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .catbar-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
 .catbar-count{font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums}
@@ -279,6 +287,8 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
   .masthead-actions .ghost-link,.live span{display:none}
   .field,.field.grow input,.field.search{flex:1 1 100%}
   .field select,.field input{width:100%}
+  .catdd{flex:1 1 100%}
+  .catdd>summary{width:100%}
 }
 @media print{.toolbar,.masthead,.hero .try,.howto,.loading-bar{display:none!important}body{background:#fff}.card,.kpi{box-shadow:none}}
 @media (prefers-reduced-motion: reduce){
@@ -351,27 +361,25 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
       <div class="field grow"><label for="f-comm">Community</label><select id="f-comm" onchange="D.apply()"><option value="">All communities</option></select></div>
       <div class="field"><label for="f-work">Work type</label><select id="f-work" onchange="D.apply()"><option value="all">All work</option></select></div>
       <div class="field"><label for="f-status">Status</label><select id="f-status" onchange="D.apply()"><option value="all">All statuses</option></select></div>
+      <details class="catdd" id="catbar">
+        <summary><span>Categories</span><span class="catbar-count" id="cat-count" aria-live="polite">—</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+        <div class="catdd-panel">
+          <div class="catbar-head">
+            <span class="catbar-label">Permit categories</span>
+            <span class="catbar-actions">
+              <button class="cat-link" type="button" onclick="D.catsAll(true)">Select all</button>
+              <button class="cat-link" type="button" onclick="D.catsAll(false)">Clear all</button>
+            </span>
+          </div>
+          <div class="cat-list" id="cat-list" role="group" aria-label="Show or hide permit categories"></div>
+        </div>
+      </details>
       <div class="field search"><label for="f-q">Search</label><input id="f-q" placeholder="address, contractor, keyword…" onchange="D.onSearch()"><span class="search-hint" id="search-hint" style="display:none">Pick a community or year above to search within it</span></div>
       <button class="btn btn-ghost" type="button" onclick="D.reset()">Reset</button>
       <div class="toolbar-meta" aria-live="polite">
         <span class="count" id="count-badge">loading…</span>
         <span class="mode city" id="mode-badge">city mode</span>
       </div>
-    </div>
-    <div class="catbar" id="catbar">
-      <div class="catbar-head">
-        <span class="catbar-label">Permit categories</span>
-        <span class="catbar-count" id="cat-count" aria-live="polite">—</span>
-        <span class="catbar-actions">
-          <button class="cat-link" type="button" onclick="D.catsAll(true)">Select all</button>
-          <button class="cat-link" type="button" onclick="D.catsAll(false)">Clear all</button>
-        </span>
-      </div>
-      <div class="cat-list" id="cat-list" role="group" aria-label="Show or hide permit categories"></div>
-    </div>
-    <div class="toolbar-help">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      <span>Filters update every metric, chart, the map and the table together. Drill below ~30,000 permits (a community, or one year) to unlock permit-level detail.</span>
     </div>
   </section>
 
@@ -665,7 +673,7 @@ const D = {
   },
   updateCatCount(){
     const el=document.getElementById('cat-count'); if(!el||!this.cats) return;
-    el.textContent=`${this.activeCats.size} of ${this.cats.length} shown`;
+    el.textContent=`${this.activeCats.size} of ${this.cats.length}`;
   },
   toggleCatIdx(i,on){
     const c=this.cats&&this.cats[i]; if(!c) return;
@@ -688,7 +696,7 @@ const D = {
     document.getElementById('first-load').style.display='none';
     document.getElementById('results').style.display='none';
     document.getElementById('empty-state').style.display='';
-    this.setEmptyCopy('No permit categories selected','Every permit category is hidden. Re-check at least one category above — or choose “Select all” — to see permits.');
+    this.setEmptyCopy('No permit categories selected','Every permit category is hidden. Open the Categories menu in the filter bar and re-check at least one category — or choose “Select all” — to see permits.');
     const cb=document.getElementById('count-badge'); if(cb) cb.innerHTML='<span class="num tnum">0</span> permits in scope';
     const mb=document.getElementById('mode-badge'); if(mb&&mb.classList){ mb.textContent='city view — aggregated'; mb.className='mode city'; }
   },
@@ -1341,6 +1349,20 @@ function toggleTheme(){
 
 applyChartDefaults();
 D.init();
+
+// Close the Categories dropdown on outside click / Escape. Feature-guarded: the test
+// harness's stub document has no addEventListener, so this block is a no-op there.
+if(document.addEventListener){
+  document.addEventListener('click',e=>{
+    const dd=document.getElementById('catbar');
+    if(dd&&dd.open&&e.target&&e.target.closest&&!e.target.closest('#catbar')) dd.open=false;
+  });
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape') return;
+    const dd=document.getElementById('catbar');
+    if(dd&&dd.open){ dd.open=false; const s=dd.firstElementChild; if(s&&s.focus) s.focus(); }
+  });
+}
 </script>
 </body>
 </html>
