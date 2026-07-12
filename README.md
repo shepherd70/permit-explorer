@@ -5,7 +5,7 @@ all 490K+ permits across every community, queried from Calgary's open-data API
 in your browser. One self-contained static HTML file, no backend, served at the
 site root.
 
-**Live at <https://krevian.com/>.**
+**Live at <https://yyc-permits.krevian.com/>.**
 
 ## Features
 
