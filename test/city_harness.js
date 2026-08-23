@@ -89,6 +89,7 @@ eval(src+'\nglobalThis.D=D;');
   check('grid cards defend min-width:0 against intrinsic canvas width', /\.grid \.card\{margin-bottom:0;min-width:0\}/.test(html), (html.match(/\.grid \.card\{[^}]*\}/)||[])[0]);
   check('all three CDN assets carry SRI + CORS attributes', (html.match(/integrity="sha384-/g)||[]).length===3 && (html.match(/crossorigin="anonymous"/g)||[]).length===3, {integrity:(html.match(/integrity="sha384-/g)||[]).length, crossorigin:(html.match(/crossorigin="anonymous"/g)||[]).length});
   check('chart.js pinned to its explicit dist file (stable SRI target)', html.includes('chart.js@4.5.1/dist/chart.umd.min.js'), (html.match(/cdn\.jsdelivr[^"]*/)||[])[0]);
+  check('head declares the canonical URL', html.includes('<link rel="canonical" href="https://yyc-permits.krevian.com/">'), (html.match(/<link rel="canonical[^>]*>/)||[])[0]);
 
   await new Promise(r=>setTimeout(r,50)); // let init's async finish
   console.log('after init: year options:', el('f-y1').options.length, '| communities:', D.communities.length);
