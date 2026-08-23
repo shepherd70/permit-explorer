@@ -59,7 +59,7 @@ global.fetch=async(url)=>{
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
-  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',avgc:'650000',d:'23.9',sn:'14600',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',avgc:'160000',d:'20',sn:'1470',done:'1400',openn:'40'}]);
+  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',avgc:'650000',costn:'14000',d:'23.9',sn:'14600',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',avgc:'160000',costn:'1400',d:'20',sn:'1470',done:'1400',openn:'40'}]);
   if(grp==='k'&&sel.includes('permitclassgroup')) return json([{k:'Single Family',n:'200000'},{k:'Garage',n:'50000'}]);
   if(grp==='k'&&sel.includes('workclass')) return json([{k:'New',n:'250000'},{k:'Alteration',n:'180000'}]);
   if(grp==='k'&&sel.includes('statuscurrent')) return json([{k:'Completed',n:'400000'},{k:'Cancelled',n:'20000'},{k:'Issued Permit',n:'30000'}]);
@@ -272,18 +272,18 @@ eval(src+'\nglobalThis.D=D;');
   // --- compare partial failure: a failed request must surface a named retry, never a zero-valued community (audit 2026-07 major) ---
   global.__failCmp=['DOWNTOWN COMMERCIAL CORE'];
   D.cmpSel=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; D.renderCmpChips(); await D.cmpRun();
-  console.log('COMPARE FAILURE: notice:', el('cmp-notice').innerHTML.slice(0,90));
+  console.log('COMPARE FAILURE: notice:', el('cmp-notice').textContent);
   check('failed community carries an error sentinel, not zeros', !!(D.cmpData['DOWNTOWN COMMERCIAL CORE']&&D.cmpData['DOWNTOWN COMMERCIAL CORE'].error), D.cmpData['DOWNTOWN COMMERCIAL CORE']);
   check('surviving community still loads', !!D.cmpData['HARVEST HILLS'] && D.cmpData['HARVEST HILLS'].n===1100, D.cmpData['HARVEST HILLS']&&D.cmpData['HARVEST HILLS'].n);
   check('failed community excluded from the compare table', !el('cmp-table').innerHTML.includes('DOWNTOWN') && el('cmp-table').innerHTML.includes('HARVEST HILLS'), el('cmp-table').innerHTML.slice(0,120));
   check('failed community excluded from the chart', D.charts.compare.data.datasets.length===1, D.charts.compare.data.datasets.length);
-  check('notice names the failed community with a Retry link', /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').innerHTML) && /Retry/.test(el('cmp-notice').innerHTML), el('cmp-notice').innerHTML);
+  check('notice names the failed community (status text) and shows the Retry control', /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').textContent) && el('cmp-notice-wrap').style.display==='', [el('cmp-notice').textContent, el('cmp-notice-wrap').style.display]);
   check('partial compare failure does not raise the global error banner', !el('err').classList._s.has('show'), el('err-text').textContent);
   global.__failCmp=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; await D.cmpRun();   // every request fails
-  check('all-failed: table/chart hidden, both names in the notice', el('cmp-body').style.display==='none' && el('cmp-empty').style.display==='none' && /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').innerHTML) && /HARVEST HILLS/.test(el('cmp-notice').innerHTML), [el('cmp-body').style.display, el('cmp-empty').style.display, el('cmp-notice').innerHTML.slice(0,90)]);
+  check('all-failed: table/chart hidden, both names in the notice', el('cmp-body').style.display==='none' && el('cmp-empty').style.display==='none' && /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').textContent) && /HARVEST HILLS/.test(el('cmp-notice').textContent), [el('cmp-body').style.display, el('cmp-empty').style.display, el('cmp-notice').textContent]);
   global.__failCmp=null; await D.cmpRetry();                                          // recovery via the notice's Retry affordance
   check('retry reloads every selected community', D.charts.compare.data.datasets.length===2 && !D.cmpData['DOWNTOWN COMMERCIAL CORE'].error, [D.charts.compare.data.datasets.length, D.cmpData['DOWNTOWN COMMERCIAL CORE']&&D.cmpData['DOWNTOWN COMMERCIAL CORE'].error]);
-  check('retry clears the failure notice', el('cmp-notice').innerHTML==='', el('cmp-notice').innerHTML);
+  check('retry clears the failure notice and hides it', el('cmp-notice').textContent==='' && el('cmp-notice-wrap').style.display==='none', [el('cmp-notice').textContent, el('cmp-notice-wrap').style.display]);
   D.cmpClear();
 
   // --- CSV export: spreadsheet-formula neutralization in the detail-mode client CSV (audit 2026-07 minor, repeat) ---
