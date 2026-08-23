@@ -455,7 +455,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
     <section class="grid two">
       <div class="card"><div class="card-head"><h3>Top contractors</h3><span class="hint">— by permit count</span></div><div class="ch"><canvas id="c-contr" role="img" aria-label="Top contractors by permit count"></canvas></div></div>
-      <div class="card" id="card-speed"><div class="card-head"><h3>Permit processing speed</h3><span class="hint">— avg days applied&rarr;issued, by year</span></div><div class="ch"><canvas id="c-speed" role="img" aria-label="Average days to issue by year"></canvas></div></div>
+      <div class="card" id="card-speed"><div class="card-head"><h3>Permit processing speed</h3><span class="hint" id="speed-hint">— avg days applied&rarr;issued, by year</span></div><div class="ch"><canvas id="c-speed" role="img" aria-label="Average days to issue by year"></canvas></div></div>
     </section>
 
     <section class="card">
@@ -928,6 +928,8 @@ const D = {
     set(this.charts.month,MONTHS,s.month);
     set(this.charts.contr,s.contr.map(c=>String(c[0]).length>26?String(c[0]).slice(0,25)+'…':c[0]),s.contr.map(c=>c[1]));
     set(this.charts.speed,s.yr.map(r=>r.k),s.yr.map(r=>r.d));
+    { const sh=document.getElementById('speed-hint'); if(sh) sh.textContent=detail?'— median days applied→issued, by year':'— avg days applied→issued, by year';   // detail plots client-side medians; city plots server averages
+      const sc=document.getElementById('c-speed'); if(sc&&sc.setAttribute) sc.setAttribute('aria-label',(detail?'Median':'Average')+' days to issue by year'); }
     let cp=0,cu=0;
     set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n),s.yr.map(r=>cu+=r.u));
     if(detail){
@@ -960,7 +962,7 @@ const D = {
     this.charts.contr=new Chart(document.getElementById('c-contr'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:C.purple+'CC',borderRadius:4}]},
       options:{...base,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
     this.charts.speed=new Chart(document.getElementById('c-speed'),{type:'line',data:{labels:[],datasets:[{label:'Days',data:[],borderColor:C.red,backgroundColor:C.red+'22',borderWidth:2,tension:.3,fill:true,pointRadius:3,pointBackgroundColor:C.red,spanGaps:true}]},
-      options:{...base,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y==null?'—':c.parsed.y.toFixed(0)} days`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'days'}}}}});
+      options:{...base,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y==null?'—':c.parsed.y.toFixed(0)} days (${D.mode==='detail'?'median':'avg'})`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'days'}}}}});
     this.charts.cum=new Chart(document.getElementById('c-cum'),{type:'line',data:{labels:[],datasets:[
       {label:'Cumulative permits',data:[],borderColor:C.blue,backgroundColor:C.blue+'25',borderWidth:2,tension:.2,fill:true,pointRadius:2,yAxisID:'y'},
       {label:'Cumulative housing units',data:[],borderColor:C.green,borderWidth:2,tension:.2,fill:false,pointRadius:2,yAxisID:'y1'}

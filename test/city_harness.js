@@ -116,6 +116,7 @@ eval(src+'\nglobalThis.D=D;');
   check('city KPI avg project cost = avg(estprojectcost), not sum/count(1)', el('k-med').textContent==='$70K', el('k-med').textContent);
   check('city KPI cost-coverage note disclosed', digits(el('k-cost-n').textContent)==='450000490787', el('k-cost-n').textContent);
   check('city % new construction uses the dedicated newn aggregate (53%, not 51% from top-8)', el('k-count-n').textContent==='53% new construction', el('k-count-n').textContent);
+  check('speed-chart hint says avg in city view', /avg days/.test(el('speed-hint').textContent), el('speed-hint').textContent);
   check('city year chart points', D.charts.year.data.labels.length===2, D.charts.year.data.labels.length);
   check('city communities loaded', D.stats.comms.length===2, D.stats.comms.length);
   check('community stats carry server avg cost (avgc) for the choropleth', D.stats.comms.every(c=>typeof c.avgc==='number'&&c.avgc>0), D.stats.comms.map(c=>c.avgc));
@@ -173,6 +174,7 @@ eval(src+'\nglobalThis.D=D;');
   // negative durations (issued before applied) are data errors: excluded, never clamped to 0 (audit 2026-06/-07)
   check('reversed-date rows get dti=null, not 0', D.allRows.filter(d=>d.dti==null).length===40 && !D.allRows.some(d=>d.dti===0), [D.allRows.filter(d=>d.dti==null).length, D.allRows.some(d=>d.dti===0)]);
   check('detail days-to-issue histogram excludes invalid rows', D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0)===1440, D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0));
+  check('speed-chart hint says median in detail view', /median days/.test(el('speed-hint').textContent), el('speed-hint').textContent);
   check('renov card unlocked in detail mode', el('card-renov').classList._s.has('locked')===false);
   check('detail cost histogram sums to rows', D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0)===1480, D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0));
   check('detail table rendered', /<tbody>/.test(el('tbl').innerHTML));
