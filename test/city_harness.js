@@ -71,7 +71,9 @@ global.fetch=async(url)=>{
 
 const fs=require('fs'), path=require('path');
 const html=fs.readFileSync(path.join(__dirname,'..','src','city_explorer.html'),'utf8');
-const src=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const scriptMatch=html.match(/<script>([\s\S]*?)<\/script>/);
+if(!scriptMatch){ console.error('FAIL could not extract the inline <script> from src/city_explorer.html — test needs updating'); process.exit(1); }
+const src=scriptMatch[1];
 eval(src+'\nglobalThis.D=D;');
 
 (async()=>{
