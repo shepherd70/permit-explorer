@@ -343,7 +343,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
         <h4>What the numbers mean</h4>
         <ul>
           <li><b>Estimated cost</b> is the applicant's projected construction value — not final or assessed value. Some permits have no cost on file.</li>
-          <li><b>Days to issue</b> = issued date − applied date.</li>
+          <li><b>Days to issue</b> = issued date − applied date (rare records with an issue date before the application are excluded).</li>
           <li><b>Completion rate</b> = completed ÷ resolved permits (excludes ones still in review or on hold).</li>
           <li><b>Renovation lifecycle</b> pairs a new build with the first later non-demolition permit at the same address.</li>
           <li>Map bubbles use the average location of permits in each community.</li>
@@ -768,7 +768,7 @@ const D = {
     this.busy(true);
     try{
       const where=this.where(), q=this.qParam();
-      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn', ...(where?{where}:{}) , ...q}, signal);
+      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn', ...(where?{where}:{}) , ...q}, signal);
       if(seq!==this._seq) return;                 // a newer filter change superseded this one
       this.total = +head[0].n||0;
       if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0],seq,signal);
@@ -783,15 +783,15 @@ const D = {
   async enterCity(where,q,head,seq,signal){
     const W = w => { const conds=[w,where].filter(Boolean).join(' AND '); return conds?{where:conds}:{}; };
     const [yr, cls, work, month, contr, status, comms, costh, dtih] = await Promise.all([
-      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
+      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}, signal),
       soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}, signal),
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
-      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, avg(date_diff_d(issueddate,applieddate)) as d, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
       soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
-      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
+      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL AND date_diff_d(issueddate,applieddate)>=0'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
     if(seq!=null && seq!==this._seq) return;       // superseded while loading
     this.mode='city'; this.rows=null; this.renovLags=[];
@@ -820,7 +820,7 @@ const D = {
       applied:r.applieddate?r.applieddate.slice(0,10):null,
       year:r.applieddate?+r.applieddate.slice(0,4):null,
       month:r.applieddate?+r.applieddate.slice(5,7)-1:null,
-      dti:(r.applieddate&&r.issueddate)?Math.max(0,Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,
+      dti:(r.applieddate&&r.issueddate)?(dd=>dd>=0?dd:null)(Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,   // negative = data error → excluded, matching the server-side case() guard
       type:r.permittype, cls:r.permitclassgroup||'Unspecified', clsDetail:r.permitclass,
       work:r.workclass||'Unspecified', desc:r.description,
       contractor:r.contractorname, units:+r.housingunits||0,
@@ -1136,7 +1136,7 @@ const D = {
     try{
       const names=this.cmpSel.slice();
       const results=await Promise.all(names.map(nm=>soql({
-        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(date_diff_d(issueddate,applieddate)) as dsum, sum(case(issueddate IS NOT NULL,1,true,0)) as dcnt, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
+        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as dsum, sum(case(date_diff_d(issueddate,applieddate)>=0,1,true,0)) as dcnt, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
         where:this.cmpWhere(nm), group:'k', order:'k'
       },signal).catch(e=>{ if(isAbort(e)) throw e; return null; })));
       if(seq!==this._cmpSeq) return;                              // superseded by a newer selection/filter

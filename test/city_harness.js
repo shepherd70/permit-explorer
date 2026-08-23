@@ -63,7 +63,7 @@ global.fetch=async(url)=>{
   if(grp==='k'&&sel.includes('contractorname')) return json([{k:'CEDARGLEN GROUP (THE)',n:'5000'}]);
   if(sel.startsWith('permitnum')&&p['$limit']==='30000')
     return json(Array.from({length:1480},(_,i)=>({permitnum:'BP'+i,statuscurrent:i%10?'Completed':'Cancelled',
-      applieddate:`20${10+(i%15)}-0${1+(i%9)}-05T00:00:00.000`,issueddate:`20${10+(i%15)}-0${1+(i%9)}-08T00:00:00.000`,
+      applieddate:`20${10+(i%15)}-0${1+(i%9)}-05T00:00:00.000`,issueddate:`20${10+(i%15)}-0${1+(i%9)}-0${i%37?8:2}T00:00:00.000`,   // every 37th row: issued BEFORE applied (40 bad rows) → must be excluded, not clamped
       permittype:'T',permitclass:'1106',permitclassgroup:i%5?'Single Family':'Garage',workclass:i%3?'Alteration':'New',
       description:'work item '+i,contractorname:i%4?'ACME':null,housingunits:String(i%2),estprojectcost:String(1000*(i+1)),
       originaladdress:(i%300)+' FAKE ST NW',communityname:'HARVEST HILLS',latitude:'51.14',longitude:'-114.06'})));
@@ -158,6 +158,9 @@ eval(src+'\nglobalThis.D=D;');
   check('detail rows loaded', D.rows.length===1480, D.rows.length);
   check('detail median cost formatted', /^\$[\d.]+[KMB]?$/.test(el('k-med').textContent), el('k-med').textContent);
   check('detail median days-to-issue', el('k-dti').textContent==='3', el('k-dti').textContent);
+  // negative durations (issued before applied) are data errors: excluded, never clamped to 0 (audit 2026-06/-07)
+  check('reversed-date rows get dti=null, not 0', D.allRows.filter(d=>d.dti==null).length===40 && !D.allRows.some(d=>d.dti===0), [D.allRows.filter(d=>d.dti==null).length, D.allRows.some(d=>d.dti===0)]);
+  check('detail days-to-issue histogram excludes invalid rows', D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0)===1440, D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0));
   check('renov card unlocked in detail mode', el('card-renov').classList._s.has('locked')===false);
   check('detail cost histogram sums to rows', D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0)===1480, D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0));
   check('detail table rendered', /<tbody>/.test(el('tbl').innerHTML));
