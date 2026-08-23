@@ -283,6 +283,16 @@ eval(src+'\nglobalThis.D=D;');
   check('retry clears the failure notice', el('cmp-notice').innerHTML==='', el('cmp-notice').innerHTML);
   D.cmpClear();
 
+  // --- CSV export: spreadsheet-formula neutralization in the detail-mode client CSV (audit 2026-07 minor, repeat) ---
+  check('csvCell neutralizes leading =', D.csvCell('=SUM(A1)')==="'=SUM(A1)", D.csvCell('=SUM(A1)'));
+  check('csvCell neutralizes leading +', D.csvCell('+CMD|calc')==="'+CMD|calc", D.csvCell('+CMD|calc'));
+  check('csvCell neutralizes leading @', D.csvCell('@import')==="'@import", D.csvCell('@import'));
+  check('csvCell neutralizes a formula-looking address', D.csvCell('-2+3+cmd')==="'-2+3+cmd", D.csvCell('-2+3+cmd'));
+  check('csvCell leaves negative numbers numeric', D.csvCell(-6)==='-6', D.csvCell(-6));
+  check('csvCell leaves decimal strings numeric', D.csvCell('1234.5')==='1234.5', D.csvCell('1234.5'));
+  check('csvCell neutralizes then RFC-quotes combined hostile cells', D.csvCell('=1,2')==='"\'=1,2"', D.csvCell('=1,2'));
+  check('csvCell still RFC-quotes plain commas', D.csvCell('a,b')==='"a,b"', D.csvCell('a,b'));
+
   // --- URL state round-trip for the map shading metric ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.
   global.location = {search:'', pathname:'/permit-explorer/', hash:'', _last:''};
