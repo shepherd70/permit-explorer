@@ -229,8 +229,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .cmp-chip button{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,.28);color:inherit;cursor:pointer;font-size:14px;line-height:1}
 .cmp-chip button:hover{background:rgba(255,255,255,.45)}
 .cmp-empty{font-size:13.5px;color:var(--text-2)}
-.cmp-notice{font-size:13px;color:var(--neg);margin-bottom:10px}
-.cmp-notice:empty{display:none}
+.cmp-notice{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--neg);margin-bottom:10px}
 .cmp-table-wrap{overflow-x:auto;margin-bottom:var(--s5)}
 table.cmp{width:100%;border-collapse:collapse;font-size:13px}
 table.cmp th,table.cmp td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -436,7 +435,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
         <button class="btn btn-ghost" type="button" id="cmp-clear" style="display:none" onclick="D.cmpClear()">Clear</button>
       </div>
       <div id="cmp-empty" class="cmp-empty">Pick communities above to compare their permit volume, cost, and processing speed side by side.</div>
-      <div id="cmp-notice" class="cmp-notice" role="status"></div>
+      <div id="cmp-notice-wrap" class="cmp-notice" style="display:none"><span id="cmp-notice" role="status"></span><button type="button" id="cmp-notice-retry" class="cat-link" onclick="D.cmpRetry()">Retry</button></div>
       <div id="cmp-body" style="display:none">
         <div class="cmp-table-wrap"><div id="cmp-table"></div></div>
         <div class="ch tall"><canvas id="c-compare" role="img" aria-label="Permits per year, by community"></canvas></div>
@@ -573,7 +572,7 @@ function rampColor(t){ // cividis: perceptually uniform, colour-blind- and greys
 // `ppy` (avg permits/year) is the volume metric that replaced the old count bubbles.
 const CHORO_METRICS = {
   ppy: {label:'Avg permits / year', short:'avg permits per year', log:true,  minN:1, get:c=>c.ppy,           fmt:v=>`${v>=10?Math.round(v).toLocaleString():v.toFixed(1)}/yr`},
-  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.avgc,             fmt:v=>fmt$(v)},
+  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.avgc, count:c=>c.costn, fmt:v=>fmt$(v)},   // gate on cost-bearing permits (costn), since avgc averages only those
   dti: {label:'Avg days to issue', short:'avg days to issue', log:false, minN:5, get:c=>c.dti,             fmt:v=>`${Math.round(v)} d`},
   comp:{label:'Completion rate',   short:'completion rate',   log:false, minN:5, get:c=>c.comp,            fmt:v=>`${Math.round(v*100)}%`}
 };
@@ -797,7 +796,7 @@ const D = {
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
-      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, count(estprojectcost) as costn, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
       soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
       soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL AND date_diff_d(issueddate,applieddate)>=0'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
@@ -809,7 +808,7 @@ const D = {
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
-      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,sn=+r.sn||0,resolved=sn-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
+      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,sn=+r.sn||0,resolved=sn-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,costn:+r.costn||0,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
       costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
       head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d, avgc:head.avgc==null?null:+head.avgc, costn:+head.costn||0, newn:+head.newn||0}
     };
@@ -1023,7 +1022,7 @@ const D = {
     document.getElementById('map-hint').textContent=`— communities shaded by ${metric.short}; grey = too few permits or no boundary; click an area to drill in`;
     const byName={}, vals=[];
     this.stats.comms.forEach(c=>{
-      if(c.n<minN) return;
+      if((metric.count?metric.count(c):c.n)<minN) return;   // metrics may gate on a metric-specific count (e.g. cost uses cost-bearing permits)
       const v=metric.get(c);
       if(v==null||isNaN(v)) return;
       byName[String(c.name).toUpperCase().trim()]={c,v};
@@ -1113,7 +1112,7 @@ const D = {
     if(this._cmpAc){ try{ this._cmpAc.abort(); }catch(e){} this._cmpAc=null; }
     this.renderCmpChips(); this.writeURL(); this.renderCompare();
   },
-  cmpRetry(){ this.clearError(); return this.cmpRun(); },   // re-runs every selected community (successes simply refresh)
+  cmpRetry(){ return this.cmpRun(); },   // re-runs every selected community; must NOT clearError() — compare failures never raise the global banner, so clearing it would hide an unrelated main-query error
   renderCmpChips(){
     const wrap=document.getElementById('cmp-chips'); if(!wrap) return;
     wrap.innerHTML=this.cmpSel.map((n,i)=>`<span class="cmp-chip" style="background:${this.cmpColor(i)}"><span class="sw"></span>${esc(n)}<button type="button" aria-label="Remove ${esc(n).replace(/"/g,'&quot;')}" onclick="D.cmpRemoveIdx(${i})">×</button></span>`).join('');   // index-based handler: no community name is ever interpolated into an attribute
@@ -1169,10 +1168,10 @@ const D = {
     const sel=this.cmpSel.filter(n=>this.cmpData[n]);
     const names=sel.filter(n=>!this.cmpData[n].error);       // failed communities are excluded from the table, chart and best-rankings
     const failed=sel.filter(n=>!!this.cmpData[n].error);
-    const notice=document.getElementById('cmp-notice');
-    if(notice) notice.innerHTML = failed.length
-      ? `Couldn’t load ${failed.map(n=>esc(n)).join(', ')}. <a href="#" onclick="D.cmpRetry();return false;">Retry</a>`
-      : '';
+    const notice=document.getElementById('cmp-notice');   // status text only (textContent → names need no escaping); the Retry control is a sibling outside the live region
+    if(notice) notice.textContent = failed.length ? `Couldn’t load ${failed.join(', ')}.` : '';
+    const noticeWrap=document.getElementById('cmp-notice-wrap');
+    if(noticeWrap&&noticeWrap.style) noticeWrap.style.display = failed.length ? '' : 'none';
     if(!names.length){
       if(empty&&empty.style) empty.style.display = failed.length ? 'none' : '';   // all-failed: the notice explains the empty panel, not the picker prompt
       if(body&&body.style) body.style.display='none';

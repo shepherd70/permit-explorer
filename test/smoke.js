@@ -116,7 +116,7 @@ const checks = [
     const r = await rows({ select: "count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn, sum(case(workclass='New',1,true,0)) as newn", limit: '1' });
     const x = r[0] || {};
     check('head aggregates (sum/avg/count/case-guarded date_diff_d)',
-      Number.isFinite(+x.n) && +x.n > 0 && Number.isFinite(+x.avgc) && +x.costn > 0 && +x.costn <= +x.n && Number.isFinite(+x.d) && +x.newn >= 0,
+      Number.isFinite(+x.n) && +x.n > 0 && Number.isFinite(+x.avgc) && +x.costn > 0 && +x.costn <= +x.n && x.d != null && Number.isFinite(+x.d) && +x.newn >= 0,
       x);
   } },
 
