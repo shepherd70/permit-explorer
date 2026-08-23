@@ -84,6 +84,10 @@ const src=scriptMatch[1];
 eval(src+'\nglobalThis.D=D;');
 
 (async()=>{
+  // --- static source contracts: string-level guards for load-bearing markup/CSS the DOM stubs can't exercise ---
+  check('collapsed grids use minmax(0,1fr) so canvases cannot force mobile overflow', html.includes('.grid.two,.grid.three{grid-template-columns:minmax(0,1fr)}'), (html.match(/@media\(max-width:920px\)[^\n]*/)||[])[0]);
+  check('grid cards defend min-width:0 against intrinsic canvas width', /\.grid \.card\{margin-bottom:0;min-width:0\}/.test(html), (html.match(/\.grid \.card\{[^}]*\}/)||[])[0]);
+
   await new Promise(r=>setTimeout(r,50)); // let init's async finish
   console.log('after init: year options:', el('f-y1').options.length, '| communities:', D.communities.length);
   check('init populated year options', el('f-y1').options.length===2, el('f-y1').options.length);

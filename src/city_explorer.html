@@ -199,7 +199,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .grid{display:grid;gap:var(--s5);margin-bottom:var(--s5)}
 .grid.two{grid-template-columns:repeat(2,1fr)}
 .grid.three{grid-template-columns:repeat(3,1fr)}
-.grid .card{margin-bottom:0}
+.grid .card{margin-bottom:0;min-width:0}   /* grid items default to min-width:auto — Chart.js canvases would otherwise force document-level overflow on phones */
 .ch{position:relative;height:300px}
 .ch.tall{height:350px}
 
@@ -282,7 +282,7 @@ footer a{font-weight:600}
 footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
 /* responsive */
-@media(max-width:920px){.grid.two,.grid.three{grid-template-columns:1fr}.toolbar-meta{margin-left:0;align-items:flex-start;text-align:left;width:100%}}
+@media(max-width:920px){.grid.two,.grid.three{grid-template-columns:minmax(0,1fr)}.toolbar-meta{margin-left:0;align-items:flex-start;text-align:left;width:100%}}
 @media(max-width:560px){
   .hero h1{font-size:26px}
   #map{height:380px}.ch{height:260px}
