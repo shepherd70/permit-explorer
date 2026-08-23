@@ -51,8 +51,11 @@ global.fetch=async(url)=>{
     // come from this aggregate, not from searching the truncated top-8 work array.
     return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6',avgc:det?'150000':'70000',costn:det?'1400':'450000',newn:det?'500':'260000'}]);
   }
-  if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done'))   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
+  if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done')){   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
+    // name-keyed failure injection (same idiom as __failBoundaries): fail only the listed communities
+    if(global.__failCmp && global.__failCmp.some(n=>where.includes(n))) return {ok:false,status:503,statusText:'Service Unavailable',text:async()=>'boom',json:async()=>({})};
     return json([{k:'2018',n:'500',c:'1.0e8',cn:'400',u:'200',dsum:'10000',dcnt:'480',sn:'490',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',cn:'500',u:'250',dsum:'13000',dcnt:'580',sn:'590',done:'550',openn:'25'}]);
+  }
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
@@ -256,6 +259,23 @@ eval(src+'\nglobalThis.D=D;');
   check('compare remove leaves the other community', D.cmpSel.length===1 && D.cmpSel[0]==='DOWNTOWN COMMERCIAL CORE', D.cmpSel);
   D.cmpClear();
   check('compare clear empties selection and chart', D.cmpSel.length===0 && D.charts.compare.data.datasets.length===0, [D.cmpSel.length,D.charts.compare.data.datasets.length]);
+
+  // --- compare partial failure: a failed request must surface a named retry, never a zero-valued community (audit 2026-07 major) ---
+  global.__failCmp=['DOWNTOWN COMMERCIAL CORE'];
+  D.cmpSel=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; D.renderCmpChips(); await D.cmpRun();
+  console.log('COMPARE FAILURE: notice:', el('cmp-notice').innerHTML.slice(0,90));
+  check('failed community carries an error sentinel, not zeros', !!(D.cmpData['DOWNTOWN COMMERCIAL CORE']&&D.cmpData['DOWNTOWN COMMERCIAL CORE'].error), D.cmpData['DOWNTOWN COMMERCIAL CORE']);
+  check('surviving community still loads', !!D.cmpData['HARVEST HILLS'] && D.cmpData['HARVEST HILLS'].n===1100, D.cmpData['HARVEST HILLS']&&D.cmpData['HARVEST HILLS'].n);
+  check('failed community excluded from the compare table', !el('cmp-table').innerHTML.includes('DOWNTOWN') && el('cmp-table').innerHTML.includes('HARVEST HILLS'), el('cmp-table').innerHTML.slice(0,120));
+  check('failed community excluded from the chart', D.charts.compare.data.datasets.length===1, D.charts.compare.data.datasets.length);
+  check('notice names the failed community with a Retry link', /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').innerHTML) && /Retry/.test(el('cmp-notice').innerHTML), el('cmp-notice').innerHTML);
+  check('partial compare failure does not raise the global error banner', !el('err').classList._s.has('show'), el('err-text').textContent);
+  global.__failCmp=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; await D.cmpRun();   // every request fails
+  check('all-failed: table/chart hidden, both names in the notice', el('cmp-body').style.display==='none' && el('cmp-empty').style.display==='none' && /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').innerHTML) && /HARVEST HILLS/.test(el('cmp-notice').innerHTML), [el('cmp-body').style.display, el('cmp-empty').style.display, el('cmp-notice').innerHTML.slice(0,90)]);
+  global.__failCmp=null; await D.cmpRetry();                                          // recovery via the notice's Retry affordance
+  check('retry reloads every selected community', D.charts.compare.data.datasets.length===2 && !D.cmpData['DOWNTOWN COMMERCIAL CORE'].error, [D.charts.compare.data.datasets.length, D.cmpData['DOWNTOWN COMMERCIAL CORE']&&D.cmpData['DOWNTOWN COMMERCIAL CORE'].error]);
+  check('retry clears the failure notice', el('cmp-notice').innerHTML==='', el('cmp-notice').innerHTML);
+  D.cmpClear();
 
   // --- URL state round-trip for the map shading metric ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.

@@ -228,6 +228,8 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .cmp-chip button{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,.28);color:inherit;cursor:pointer;font-size:14px;line-height:1}
 .cmp-chip button:hover{background:rgba(255,255,255,.45)}
 .cmp-empty{font-size:13.5px;color:var(--text-2)}
+.cmp-notice{font-size:13px;color:var(--neg);margin-bottom:10px}
+.cmp-notice:empty{display:none}
 .cmp-table-wrap{overflow-x:auto;margin-bottom:var(--s5)}
 table.cmp{width:100%;border-collapse:collapse;font-size:13px}
 table.cmp th,table.cmp td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -433,6 +435,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
         <button class="btn btn-ghost" type="button" id="cmp-clear" style="display:none" onclick="D.cmpClear()">Clear</button>
       </div>
       <div id="cmp-empty" class="cmp-empty">Pick communities above to compare their permit volume, cost, and processing speed side by side.</div>
+      <div id="cmp-notice" class="cmp-notice" role="status"></div>
       <div id="cmp-body" style="display:none">
         <div class="cmp-table-wrap"><div id="cmp-table"></div></div>
         <div class="ch tall"><canvas id="c-compare" role="img" aria-label="Permits per year, by community"></canvas></div>
@@ -1102,6 +1105,7 @@ const D = {
     if(this._cmpAc){ try{ this._cmpAc.abort(); }catch(e){} this._cmpAc=null; }
     this.renderCmpChips(); this.writeURL(); this.renderCompare();
   },
+  cmpRetry(){ this.clearError(); return this.cmpRun(); },   // re-runs every selected community (successes simply refresh)
   renderCmpChips(){
     const wrap=document.getElementById('cmp-chips'); if(!wrap) return;
     wrap.innerHTML=this.cmpSel.map((n,i)=>`<span class="cmp-chip" style="background:${this.cmpColor(i)}"><span class="sw"></span>${esc(n)}<button type="button" aria-label="Remove ${esc(n).replace(/"/g,'&quot;')}" onclick="D.cmpRemove('${esc(n).replace(/'/g,"\\'")}')">×</button></span>`).join('');
@@ -1137,11 +1141,13 @@ const D = {
       const results=await Promise.all(names.map(nm=>soql({
         select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as dsum, sum(case(date_diff_d(issueddate,applieddate)>=0,1,true,0)) as dcnt, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
         where:this.cmpWhere(nm), group:'k', order:'k'
-      },signal).catch(e=>{ if(isAbort(e)) throw e; return null; })));
+      },signal).catch(e=>{ if(isAbort(e)) throw e; return {error:(e&&e.message)||'request failed'}; })));   // sentinel — a failed community must never render as zeros
       if(seq!==this._cmpSeq) return;                              // superseded by a newer selection/filter
       const data={};
       names.forEach((nm,idx)=>{
-        const rows=(results[idx]||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,cn:+r.cn||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,sn:+r.sn||0,done:+r.done||0,openn:+r.openn||0}));
+        const res=results[idx];
+        if(res&&res.error){ data[nm]={error:res.error}; return; }   // keep the failure visible to renderCompare
+        const rows=(res||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,cn:+r.cn||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,sn:+r.sn||0,done:+r.done||0,openn:+r.openn||0}));
         const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,cn:a.cn+r.cn,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,sn:a.sn+r.sn,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,cn:0,u:0,dsum:0,dcnt:0,sn:0,done:0,openn:0});
         data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.cn?t.c/t.cn:null, dti:t.dcnt?t.dsum/t.dcnt:null,
           comp:(t.sn-t.openn)>0?t.done/(t.sn-t.openn):null, ppy:t.n/span };   // resolved = non-null statuses − open, same rule as the KPI/choropleth
@@ -1152,9 +1158,15 @@ const D = {
   },
   renderCompare(){
     const empty=document.getElementById('cmp-empty'), body=document.getElementById('cmp-body');
-    const names=this.cmpSel.filter(n=>this.cmpData[n]);
+    const sel=this.cmpSel.filter(n=>this.cmpData[n]);
+    const names=sel.filter(n=>!this.cmpData[n].error);       // failed communities are excluded from the table, chart and best-rankings
+    const failed=sel.filter(n=>!!this.cmpData[n].error);
+    const notice=document.getElementById('cmp-notice');
+    if(notice) notice.innerHTML = failed.length
+      ? `Couldn’t load ${failed.map(n=>esc(n)).join(', ')}. <a href="#" onclick="D.cmpRetry();return false;">Retry</a>`
+      : '';
     if(!names.length){
-      if(empty&&empty.style) empty.style.display='';
+      if(empty&&empty.style) empty.style.display = failed.length ? 'none' : '';   // all-failed: the notice explains the empty panel, not the picker prompt
       if(body&&body.style) body.style.display='none';
       if(this.charts.compare){ this.charts.compare.data.labels=[]; this.charts.compare.data.datasets=[]; try{this.charts.compare.update('none');}catch(e){} }
       return;
