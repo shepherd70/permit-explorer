@@ -325,8 +325,18 @@ eval(src+'\nglobalThis.D=D;');
   check('writeURL omits cmp when none selected', !/[?&]cmp=/.test(global.location._last), global.location._last);
   D.cmpSel=['MAHOGANY','SETON']; D.writeURL();
   check('writeURL encodes the compared communities', /[?&]cmp=MAHOGANY%2CSETON/.test(global.location._last), global.location._last);
-  global.location.search='?cmp=ACADIA,BELTLINE'; D.cmpSel=[]; D.readURL();
-  check('readURL restores the compared communities', D.cmpSel.length===2 && D.cmpSel[0]==='ACADIA', D.cmpSel);
+  global.location.search='?cmp=HARVEST HILLS,DOWNTOWN COMMERCIAL CORE'; D.cmpSel=[]; D.readURL();
+  check('readURL restores the compared communities', D.cmpSel.length===2 && D.cmpSel[0]==='HARVEST HILLS', D.cmpSel);
+  // security: readURL must accept only KNOWN community names — an untrusted ?cmp= value cannot smuggle a payload into state (audit 2026-08 major, reflected XSS)
+  global.location.search='?cmp=HARVEST HILLS,'+encodeURIComponent('x" onpointerover="alert(1)')+',NOT A REAL COMMUNITY'; D.cmpSel=[]; D.readURL();
+  check('readURL rejects unknown/hostile cmp names', D.cmpSel.length===1 && D.cmpSel[0]==='HARVEST HILLS', D.cmpSel);
+  // even if a hostile name reaches renderCmpChips directly, the chip handler is index-based — no name is interpolated into an attribute
+  D.cmpSel=['x" onpointerover="alert(1)']; D.renderCmpChips();
+  // the handler must be index-based (no name in the attribute) and no name-interpolating onclick may remain;
+  // the name still appears as inert text content, which is safe (quotes need no escaping there).
+  check('chip remove handler is index-based, no name interpolated into the onclick', /onclick="D\.cmpRemoveIdx\(0\)"/.test(el('cmp-chips').innerHTML) && !/cmpRemove\('/.test(el('cmp-chips').innerHTML), el('cmp-chips').innerHTML.slice(0,160));
+  check('chip aria-label escapes the double quote (no attribute breakout)', el('cmp-chips').innerHTML.includes('aria-label="Remove x&quot; onpointerover=&quot;alert(1)"'), el('cmp-chips').innerHTML.slice(0,200));
+  check('cmpRemoveIdx removes the chip at that index', (()=>{ D.cmpSel=['HARVEST HILLS','DOWNTOWN COMMERCIAL CORE']; D.cmpRemoveIdx(0); return D.cmpSel.length===1 && D.cmpSel[0]==='DOWNTOWN COMMERCIAL CORE'; })(), D.cmpSel);
   D.cmpSel=[];                                                   // don't leak into later state
 
   delete global.location; delete global.history;
