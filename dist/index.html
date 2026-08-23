@@ -726,7 +726,11 @@ const D = {
     }
     const m=p.get('metric'); if(m && CHORO_METRICS[m]) this.choroMetric=m;   // (legacy ?map=areas links are ignored — the map is always a choropleth)
     const msel=document.getElementById('choro-metric'); if(msel) msel.value=this.choroMetric;
-    if(p.has('cmp')){ this.cmpSel=p.get('cmp').split(',').map(s=>s.trim()).filter(Boolean).slice(0,4); this.renderCmpChips(); }
+    if(p.has('cmp')){                                              // only accept known community names from the URL (untrusted input)
+      const known=(this.communities&&this.communities.length)?new Set(this.communities.map(c=>String(c.name).toUpperCase())):null;
+      this.cmpSel=p.get('cmp').split(',').map(s=>s.trim()).filter(Boolean).filter(n=>!known||known.has(n.toUpperCase())).slice(0,4);
+      this.renderCmpChips();
+    }
   },
   writeURL(){
     if(typeof location==='undefined' || typeof history==='undefined' || !history.replaceState || typeof URLSearchParams==='undefined') return;
@@ -1052,7 +1056,7 @@ const D = {
         const nm=(f&&f.properties&&f.properties.name)||'—';
         const hit=byName[String(nm).toUpperCase().trim()];
         lyr.bindPopup(hit
-          ? `<b>${esc(nm)}</b><br>${esc(metric.label)}: <b>${esc(metric.fmt(hit.v))}</b><br>${fmtN(hit.c.n)} permits<br><a href="#" onclick="D.drill('${esc(nm).replace(/'/g,"\\'")}');return false;">Drill into this community →</a>`
+          ? `<b>${esc(nm)}</b><br>${esc(metric.label)}: <b>${esc(metric.fmt(hit.v))}</b><br>${fmtN(hit.c.n)} permits<br><a href="#" onclick="D.drill('${esc(nm).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,'&quot;')}');return false;">Drill into this community →</a>`
           : `<b>${esc(nm)}</b><br><span class="lg-muted">fewer than ${minN} permits in scope</span>`);
       }
     });
@@ -1098,6 +1102,7 @@ const D = {
     if(!name || this.cmpSel.includes(name) || this.cmpSel.length>=4) return;
     this.cmpSel.push(name); this.renderCmpChips(); this.writeURL(); this.cmpRun();
   },
+  cmpRemoveIdx(i){ const nm=this.cmpSel[i]; if(nm!=null) this.cmpRemove(nm); },   // chip buttons pass their index, never an interpolated name
   cmpRemove(name){
     this.cmpSel=this.cmpSel.filter(n=>n!==name); delete this.cmpData[name];
     this.renderCmpChips(); this.writeURL();
@@ -1111,7 +1116,7 @@ const D = {
   cmpRetry(){ this.clearError(); return this.cmpRun(); },   // re-runs every selected community (successes simply refresh)
   renderCmpChips(){
     const wrap=document.getElementById('cmp-chips'); if(!wrap) return;
-    wrap.innerHTML=this.cmpSel.map((n,i)=>`<span class="cmp-chip" style="background:${this.cmpColor(i)}"><span class="sw"></span>${esc(n)}<button type="button" aria-label="Remove ${esc(n).replace(/"/g,'&quot;')}" onclick="D.cmpRemove('${esc(n).replace(/'/g,"\\'")}')">×</button></span>`).join('');
+    wrap.innerHTML=this.cmpSel.map((n,i)=>`<span class="cmp-chip" style="background:${this.cmpColor(i)}"><span class="sw"></span>${esc(n)}<button type="button" aria-label="Remove ${esc(n).replace(/"/g,'&quot;')}" onclick="D.cmpRemoveIdx(${i})">×</button></span>`).join('');   // index-based handler: no community name is ever interpolated into an attribute
     const clr=document.getElementById('cmp-clear'); if(clr&&clr.style) clr.style.display=this.cmpSel.length?'':'none';
   },
   // filters scoped to the current year/category/work/status — but for the GIVEN community (ignores the main f-comm)
