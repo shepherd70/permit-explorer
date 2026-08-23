@@ -108,12 +108,16 @@ const checks = [
     check('date_extract_y year histogram', r.length >= 1 && r[0].k != null && r[0].n != null, r[0]);
   } },
 
-  // 4. Head KPIs — sum() + avg() + date_diff_d() (enterCity()). A 200 means
-  //    those functions still parse; n>0 confirms the aggregate ran.
-  { name: 'sum/avg/date_diff_d aggregates', fn: async () => {
-    const r = await rows({ select: 'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', limit: '1' });
-    const n = r[0] && +r[0].n;
-    check('sum/avg/date_diff_d aggregates', Number.isFinite(n) && n > 0, r[0]);
+  // 4. Head KPIs — mirrors apply()'s head query verbatim: sum() + count(field) +
+  //    avg(estprojectcost) + the case()-guarded date_diff_d() (negative durations
+  //    excluded) + the dedicated New-workclass count. A 200 means every expression
+  //    still parses; the conditions confirm each aggregate returned a sane value.
+  { name: 'head aggregates (sum/avg/count/case-guarded date_diff_d)', fn: async () => {
+    const r = await rows({ select: "count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn, sum(case(workclass='New',1,true,0)) as newn", limit: '1' });
+    const x = r[0] || {};
+    check('head aggregates (sum/avg/count/case-guarded date_diff_d)',
+      Number.isFinite(+x.n) && +x.n > 0 && Number.isFinite(+x.avgc) && +x.costn > 0 && +x.costn <= +x.n && Number.isFinite(+x.d) && +x.newn >= 0,
+      x);
   } },
 
   // 5. case() binning — used for the cost / days-to-issue distributions.

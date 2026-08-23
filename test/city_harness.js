@@ -45,14 +45,21 @@ global.fetch=async(url)=>{
       : m ? m[1].split(',').reduce((s,t)=>s+(CAT_N[t.replace(/'/g,'').trim()]||0),0)
       : 490787;
     const det = n<=30000;
-    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6'}]);
+    // avgc/costn deliberately DISAGREE with c/n (c/n ≈ $63K city) so a regression back to
+    // sum/count(1) for the "Avg project cost" KPI is caught, not masked by consistent stubs.
+    // newn (260000) deliberately ≠ the work-class stub's New count (250000): the % new note must
+    // come from this aggregate, not from searching the truncated top-8 work array.
+    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6',avgc:det?'150000':'70000',costn:det?'1400':'450000',newn:det?'500':'260000'}]);
   }
-  if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done'))   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
-    return json([{k:'2018',n:'500',c:'1.0e8',u:'200',dsum:'10000',dcnt:'480',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',u:'250',dsum:'13000',dcnt:'580',done:'550',openn:'25'}]);
+  if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done')){   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
+    // name-keyed failure injection (same idiom as __failBoundaries): fail only the listed communities
+    if(global.__failCmp && global.__failCmp.some(n=>where.includes(n))) return {ok:false,status:503,statusText:'Service Unavailable',text:async()=>'boom',json:async()=>({})};
+    return json([{k:'2018',n:'500',c:'1.0e8',cn:'400',u:'200',dsum:'10000',dcnt:'480',sn:'490',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',cn:'500',u:'250',dsum:'13000',dcnt:'580',sn:'590',done:'550',openn:'25'}]);
+  }
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
-  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',d:'23.9',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',d:'20',done:'1400',openn:'40'}]);
+  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',avgc:'650000',d:'23.9',sn:'14600',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',avgc:'160000',d:'20',sn:'1470',done:'1400',openn:'40'}]);
   if(grp==='k'&&sel.includes('permitclassgroup')) return json([{k:'Single Family',n:'200000'},{k:'Garage',n:'50000'}]);
   if(grp==='k'&&sel.includes('workclass')) return json([{k:'New',n:'250000'},{k:'Alteration',n:'180000'}]);
   if(grp==='k'&&sel.includes('statuscurrent')) return json([{k:'Completed',n:'400000'},{k:'Cancelled',n:'20000'},{k:'Issued Permit',n:'30000'}]);
@@ -61,7 +68,7 @@ global.fetch=async(url)=>{
   if(grp==='k'&&sel.includes('contractorname')) return json([{k:'CEDARGLEN GROUP (THE)',n:'5000'}]);
   if(sel.startsWith('permitnum')&&p['$limit']==='30000')
     return json(Array.from({length:1480},(_,i)=>({permitnum:'BP'+i,statuscurrent:i%10?'Completed':'Cancelled',
-      applieddate:`20${10+(i%15)}-0${1+(i%9)}-05T00:00:00.000`,issueddate:`20${10+(i%15)}-0${1+(i%9)}-08T00:00:00.000`,
+      applieddate:`20${10+(i%15)}-0${1+(i%9)}-05T00:00:00.000`,issueddate:`20${10+(i%15)}-0${1+(i%9)}-0${i%37?8:2}T00:00:00.000`,   // every 37th row: issued BEFORE applied (40 bad rows) → must be excluded, not clamped
       permittype:'T',permitclass:'1106',permitclassgroup:i%5?'Single Family':'Garage',workclass:i%3?'Alteration':'New',
       description:'work item '+i,contractorname:i%4?'ACME':null,housingunits:String(i%2),estprojectcost:String(1000*(i+1)),
       originaladdress:(i%300)+' FAKE ST NW',communityname:'HARVEST HILLS',latitude:'51.14',longitude:'-114.06'})));
@@ -71,10 +78,19 @@ global.fetch=async(url)=>{
 
 const fs=require('fs'), path=require('path');
 const html=fs.readFileSync(path.join(__dirname,'..','src','city_explorer.html'),'utf8');
-const src=html.match(/<script>([\s\S]*?)<\/script>/)[1];
+const scriptMatch=html.match(/<script>([\s\S]*?)<\/script>/);
+if(!scriptMatch){ console.error('FAIL could not extract the inline <script> from src/city_explorer.html — test needs updating'); process.exit(1); }
+const src=scriptMatch[1];
 eval(src+'\nglobalThis.D=D;');
 
 (async()=>{
+  // --- static source contracts: string-level guards for load-bearing markup/CSS the DOM stubs can't exercise ---
+  check('collapsed grids use minmax(0,1fr) so canvases cannot force mobile overflow', html.includes('.grid.two,.grid.three{grid-template-columns:minmax(0,1fr)}'), (html.match(/@media\(max-width:920px\)[^\n]*/)||[])[0]);
+  check('grid cards defend min-width:0 against intrinsic canvas width', /\.grid \.card\{margin-bottom:0;min-width:0\}/.test(html), (html.match(/\.grid \.card\{[^}]*\}/)||[])[0]);
+  check('all three CDN assets carry SRI + CORS attributes', (html.match(/integrity="sha384-/g)||[]).length===3 && (html.match(/crossorigin="anonymous"/g)||[]).length===3, {integrity:(html.match(/integrity="sha384-/g)||[]).length, crossorigin:(html.match(/crossorigin="anonymous"/g)||[]).length});
+  check('chart.js pinned to its explicit dist file (stable SRI target)', html.includes('chart.js@4.5.1/dist/chart.umd.min.js'), (html.match(/cdn\.jsdelivr[^"]*/)||[])[0]);
+  check('head declares the canonical URL', html.includes('<link rel="canonical" href="https://yyc-permits.krevian.com/">'), (html.match(/<link rel="canonical[^>]*>/)||[])[0]);
+
   await new Promise(r=>setTimeout(r,50)); // let init's async finish
   console.log('after init: year options:', el('f-y1').options.length, '| communities:', D.communities.length);
   check('init populated year options', el('f-y1').options.length===2, el('f-y1').options.length);
@@ -99,8 +115,16 @@ eval(src+'\nglobalThis.D=D;');
   check('city KPI total cost', el('k-cost').textContent==='$31.00B', el('k-cost').textContent);
   check('city KPI avg days-to-issue', el('k-dti').textContent==='24', el('k-dti').textContent);
   check('city KPI completion rate', el('k-comp').textContent==='95%', el('k-comp').textContent);
+  // avg cost must come from avg(estprojectcost) — sum/count(1) would show $63K here (audit 2026-07 major)
+  check('city KPI avg project cost = avg(estprojectcost), not sum/count(1)', el('k-med').textContent==='$70K', el('k-med').textContent);
+  check('city KPI cost-coverage note disclosed', digits(el('k-cost-n').textContent)==='450000490787', el('k-cost-n').textContent);
+  check('city % new construction uses the dedicated newn aggregate (53%, not 51% from top-8)', el('k-count-n').textContent==='53% new construction', el('k-count-n').textContent);
+  check('speed-chart hint says avg in city view', /avg days/.test(el('speed-hint').textContent), el('speed-hint').textContent);
   check('city year chart points', D.charts.year.data.labels.length===2, D.charts.year.data.labels.length);
   check('city communities loaded', D.stats.comms.length===2, D.stats.comms.length);
+  check('community stats carry server avg cost (avgc) for the choropleth', D.stats.comms.every(c=>typeof c.avgc==='number'&&c.avgc>0), D.stats.comms.map(c=>c.avgc));
+  // resolved must count only non-null statuses (sn − open), not count(1) − open (audit 2026-07 minor, latent live)
+  check('community completion rate uses non-null status count (sn)', Math.abs(D.stats.comms.find(c=>c.name==='HARVEST HILLS').comp-(1400/(1470-40)))<1e-9, D.stats.comms.find(c=>c.name==='HARVEST HILLS').comp);
   check('city table rendered', /<tbody>/.test(el('tbl').innerHTML));
   check('renov card locked in city mode', el('card-renov').classList._s.has('locked')===true);
   check('city insights generated', (el('insights').innerHTML.match(/class="insight"/g)||[]).length>=5);
@@ -150,6 +174,10 @@ eval(src+'\nglobalThis.D=D;');
   check('detail rows loaded', D.rows.length===1480, D.rows.length);
   check('detail median cost formatted', /^\$[\d.]+[KMB]?$/.test(el('k-med').textContent), el('k-med').textContent);
   check('detail median days-to-issue', el('k-dti').textContent==='3', el('k-dti').textContent);
+  // negative durations (issued before applied) are data errors: excluded, never clamped to 0 (audit 2026-06/-07)
+  check('reversed-date rows get dti=null, not 0', D.allRows.filter(d=>d.dti==null).length===40 && !D.allRows.some(d=>d.dti===0), [D.allRows.filter(d=>d.dti==null).length, D.allRows.some(d=>d.dti===0)]);
+  check('detail days-to-issue histogram excludes invalid rows', D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0)===1440, D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0));
+  check('speed-chart hint says median in detail view', /median days/.test(el('speed-hint').textContent), el('speed-hint').textContent);
   check('renov card unlocked in detail mode', el('card-renov').classList._s.has('locked')===false);
   check('detail cost histogram sums to rows', D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0)===1480, D.charts.costh.data.datasets[0].data.reduce((a,b)=>a+b,0));
   check('detail table rendered', /<tbody>/.test(el('tbl').innerHTML));
@@ -231,7 +259,8 @@ eval(src+'\nglobalThis.D=D;');
   console.log('COMPARE: keys:', Object.keys(D.cmpData), '| HH n:', D.cmpData['HARVEST HILLS']&&D.cmpData['HARVEST HILLS'].n, '| chart series:', D.charts.compare.data.datasets.length);
   check('compare fetched both communities', !!D.cmpData['DOWNTOWN COMMERCIAL CORE'] && !!D.cmpData['HARVEST HILLS'], Object.keys(D.cmpData));
   check('compare totals summed across years (500+600)', D.cmpData['HARVEST HILLS'].n===1100, D.cmpData['HARVEST HILLS'].n);
-  check('compare completion = done / resolved', Math.abs(D.cmpData['HARVEST HILLS'].comp-(1000/(1100-45)))<1e-6, D.cmpData['HARVEST HILLS'].comp);
+  check('compare avg cost / permit divides by cost-bearing permits (cn)', Math.abs(D.cmpData['HARVEST HILLS'].avgCost-(2.2e8/900))<1e-6, D.cmpData['HARVEST HILLS'].avgCost);
+  check('compare completion = done / (non-null statuses − open)', Math.abs(D.cmpData['HARVEST HILLS'].comp-(1000/(1080-45)))<1e-6, D.cmpData['HARVEST HILLS'].comp);
   check('compare chart has one line per community', D.charts.compare.data.datasets.length===2, D.charts.compare.data.datasets.length);
   check('compare table rendered', /<table class="cmp"/.test(el('cmp-table').innerHTML), el('cmp-table').innerHTML.slice(0,40));
   check('compare card visible in city mode', el('card-compare').style.display==='', el('card-compare').style.display);
@@ -239,6 +268,33 @@ eval(src+'\nglobalThis.D=D;');
   check('compare remove leaves the other community', D.cmpSel.length===1 && D.cmpSel[0]==='DOWNTOWN COMMERCIAL CORE', D.cmpSel);
   D.cmpClear();
   check('compare clear empties selection and chart', D.cmpSel.length===0 && D.charts.compare.data.datasets.length===0, [D.cmpSel.length,D.charts.compare.data.datasets.length]);
+
+  // --- compare partial failure: a failed request must surface a named retry, never a zero-valued community (audit 2026-07 major) ---
+  global.__failCmp=['DOWNTOWN COMMERCIAL CORE'];
+  D.cmpSel=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; D.renderCmpChips(); await D.cmpRun();
+  console.log('COMPARE FAILURE: notice:', el('cmp-notice').innerHTML.slice(0,90));
+  check('failed community carries an error sentinel, not zeros', !!(D.cmpData['DOWNTOWN COMMERCIAL CORE']&&D.cmpData['DOWNTOWN COMMERCIAL CORE'].error), D.cmpData['DOWNTOWN COMMERCIAL CORE']);
+  check('surviving community still loads', !!D.cmpData['HARVEST HILLS'] && D.cmpData['HARVEST HILLS'].n===1100, D.cmpData['HARVEST HILLS']&&D.cmpData['HARVEST HILLS'].n);
+  check('failed community excluded from the compare table', !el('cmp-table').innerHTML.includes('DOWNTOWN') && el('cmp-table').innerHTML.includes('HARVEST HILLS'), el('cmp-table').innerHTML.slice(0,120));
+  check('failed community excluded from the chart', D.charts.compare.data.datasets.length===1, D.charts.compare.data.datasets.length);
+  check('notice names the failed community with a Retry link', /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').innerHTML) && /Retry/.test(el('cmp-notice').innerHTML), el('cmp-notice').innerHTML);
+  check('partial compare failure does not raise the global error banner', !el('err').classList._s.has('show'), el('err-text').textContent);
+  global.__failCmp=['DOWNTOWN COMMERCIAL CORE','HARVEST HILLS']; await D.cmpRun();   // every request fails
+  check('all-failed: table/chart hidden, both names in the notice', el('cmp-body').style.display==='none' && el('cmp-empty').style.display==='none' && /DOWNTOWN COMMERCIAL CORE/.test(el('cmp-notice').innerHTML) && /HARVEST HILLS/.test(el('cmp-notice').innerHTML), [el('cmp-body').style.display, el('cmp-empty').style.display, el('cmp-notice').innerHTML.slice(0,90)]);
+  global.__failCmp=null; await D.cmpRetry();                                          // recovery via the notice's Retry affordance
+  check('retry reloads every selected community', D.charts.compare.data.datasets.length===2 && !D.cmpData['DOWNTOWN COMMERCIAL CORE'].error, [D.charts.compare.data.datasets.length, D.cmpData['DOWNTOWN COMMERCIAL CORE']&&D.cmpData['DOWNTOWN COMMERCIAL CORE'].error]);
+  check('retry clears the failure notice', el('cmp-notice').innerHTML==='', el('cmp-notice').innerHTML);
+  D.cmpClear();
+
+  // --- CSV export: spreadsheet-formula neutralization in the detail-mode client CSV (audit 2026-07 minor, repeat) ---
+  check('csvCell neutralizes leading =', D.csvCell('=SUM(A1)')==="'=SUM(A1)", D.csvCell('=SUM(A1)'));
+  check('csvCell neutralizes leading +', D.csvCell('+CMD|calc')==="'+CMD|calc", D.csvCell('+CMD|calc'));
+  check('csvCell neutralizes leading @', D.csvCell('@import')==="'@import", D.csvCell('@import'));
+  check('csvCell neutralizes a formula-looking address', D.csvCell('-2+3+cmd')==="'-2+3+cmd", D.csvCell('-2+3+cmd'));
+  check('csvCell leaves negative numbers numeric', D.csvCell(-6)==='-6', D.csvCell(-6));
+  check('csvCell leaves decimal strings numeric', D.csvCell('1234.5')==='1234.5', D.csvCell('1234.5'));
+  check('csvCell neutralizes then RFC-quotes combined hostile cells', D.csvCell('=1,2')==='"\'=1,2"', D.csvCell('=1,2'));
+  check('csvCell still RFC-quotes plain commas', D.csvCell('a,b')==='"a,b"', D.csvCell('a,b'));
 
   // --- URL state round-trip for the map shading metric ---
   // readURL/writeURL no-op without a DOM location/history, so stub them here.

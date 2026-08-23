@@ -53,6 +53,16 @@ Cloudflare [`_headers`](_headers) file alongside it.
 Deployed on **Cloudflare Pages** (Git integration). The explorer is the site
 root (`index.html`); there is no second page or second URL.
 
+**Canonical domain:** the page declares
+`<link rel="canonical" href="https://yyc-permits.krevian.com/">`, matching
+`robots.txt` and `sitemap.xml`. The legacy hostnames (`krevian.com` and
+`www.krevian.com`) still serve the app with HTTP 200. Pages `_redirects` files
+cannot redirect across hostnames, so the 301 lives in the Cloudflare
+dashboard: **Account → Bulk Redirects** (or a zone Redirect Rule) sending
+`krevian.com/*` and `www.krevian.com/*` to
+`https://yyc-permits.krevian.com/$1`, status 301, preserving the query string.
+Until that rule is active, search engines rely on the canonical link alone.
+
 **Cloudflare Pages project settings:**
 
 | Setting | Value |

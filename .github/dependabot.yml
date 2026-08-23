@@ -1,0 +1,8 @@
+# Keep the SHA-pinned GitHub Actions current: Dependabot proposes PRs that bump
+# the pinned commits (and their trailing version comments) when new releases ship.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

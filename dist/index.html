@@ -5,14 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light dark">
 <meta name="description" content="A free public tool to explore the City of Calgary's building-permit records — by community, year, type of work and status. Live data from data.calgary.ca.">
+<link rel="canonical" href="https://yyc-permits.krevian.com/">
 <title>Calgary Building Permits Explorer</title>
 <script data-init>try{var t=localStorage.getItem('ce-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
 <style>
 :root{
   --bg:#f4f6f9; --surface:#ffffff; --surface-2:#f7f9fb; --surface-3:#eef2f6;
@@ -199,7 +200,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .grid{display:grid;gap:var(--s5);margin-bottom:var(--s5)}
 .grid.two{grid-template-columns:repeat(2,1fr)}
 .grid.three{grid-template-columns:repeat(3,1fr)}
-.grid .card{margin-bottom:0}
+.grid .card{margin-bottom:0;min-width:0}   /* grid items default to min-width:auto — Chart.js canvases would otherwise force document-level overflow on phones */
 .ch{position:relative;height:300px}
 .ch.tall{height:350px}
 
@@ -228,6 +229,8 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 .cmp-chip button{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;border:none;background:rgba(255,255,255,.28);color:inherit;cursor:pointer;font-size:14px;line-height:1}
 .cmp-chip button:hover{background:rgba(255,255,255,.45)}
 .cmp-empty{font-size:13.5px;color:var(--text-2)}
+.cmp-notice{font-size:13px;color:var(--neg);margin-bottom:10px}
+.cmp-notice:empty{display:none}
 .cmp-table-wrap{overflow-x:auto;margin-bottom:var(--s5)}
 table.cmp{width:100%;border-collapse:collapse;font-size:13px}
 table.cmp th,table.cmp td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -280,7 +283,7 @@ footer a{font-weight:600}
 footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
 /* responsive */
-@media(max-width:920px){.grid.two,.grid.three{grid-template-columns:1fr}.toolbar-meta{margin-left:0;align-items:flex-start;text-align:left;width:100%}}
+@media(max-width:920px){.grid.two,.grid.three{grid-template-columns:minmax(0,1fr)}.toolbar-meta{margin-left:0;align-items:flex-start;text-align:left;width:100%}}
 @media(max-width:560px){
   .hero h1{font-size:26px}
   #map{height:380px}.ch{height:260px}
@@ -321,7 +324,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 <main id="main" class="wrap">
   <section class="hero">
     <h1>Explore every building permit in Calgary</h1>
-    <p class="lede">A free, public tool for browsing the City of Calgary's building-permit records — from a backyard garage to a downtown tower. Choose a neighbourhood, a year range, or a type of work, and every number, chart, map bubble and table row below updates at once.</p>
+    <p class="lede">A free, public tool for browsing the City of Calgary's building-permit records — from a backyard garage to a downtown tower. Choose a neighbourhood, a year range, or a type of work, and every number, chart, map view and table row below updates at once.</p>
     <div class="try">
       <span class="try-label">Try asking:</span>
       <button class="chip" type="button" onclick="D.example('communities')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Which communities are building the most?</button>
@@ -343,10 +346,10 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
         <h4>What the numbers mean</h4>
         <ul>
           <li><b>Estimated cost</b> is the applicant's projected construction value — not final or assessed value. Some permits have no cost on file.</li>
-          <li><b>Days to issue</b> = issued date − applied date.</li>
+          <li><b>Days to issue</b> = issued date − applied date (rare records with an issue date before the application are excluded).</li>
           <li><b>Completion rate</b> = completed ÷ resolved permits (excludes ones still in review or on hold).</li>
           <li><b>Renovation lifecycle</b> pairs a new build with the first later non-demolition permit at the same address.</li>
-          <li>Map bubbles use the average location of permits in each community.</li>
+          <li>The map shades each community's area by your chosen metric in city view, and plots individual permit locations in detail view.</li>
         </ul>
         <h4>Source</h4>
         <p>City of Calgary Open Data — <a href="https://data.calgary.ca/Business-and-Economic-Activity/Building-Permits/c2es-76ed" target="_blank" rel="noopener">Building Permits (c2es-76ed)</a>. Independent project, not affiliated with The City of Calgary.</p>
@@ -433,6 +436,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
         <button class="btn btn-ghost" type="button" id="cmp-clear" style="display:none" onclick="D.cmpClear()">Clear</button>
       </div>
       <div id="cmp-empty" class="cmp-empty">Pick communities above to compare their permit volume, cost, and processing speed side by side.</div>
+      <div id="cmp-notice" class="cmp-notice" role="status"></div>
       <div id="cmp-body" style="display:none">
         <div class="cmp-table-wrap"><div id="cmp-table"></div></div>
         <div class="ch tall"><canvas id="c-compare" role="img" aria-label="Permits per year, by community"></canvas></div>
@@ -452,7 +456,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
     <section class="grid two">
       <div class="card"><div class="card-head"><h3>Top contractors</h3><span class="hint">— by permit count</span></div><div class="ch"><canvas id="c-contr" role="img" aria-label="Top contractors by permit count"></canvas></div></div>
-      <div class="card" id="card-speed"><div class="card-head"><h3>Permit processing speed</h3><span class="hint">— avg days applied&rarr;issued, by year</span></div><div class="ch"><canvas id="c-speed" role="img" aria-label="Average days to issue by year"></canvas></div></div>
+      <div class="card" id="card-speed"><div class="card-head"><h3>Permit processing speed</h3><span class="hint" id="speed-hint">— avg days applied&rarr;issued, by year</span></div><div class="ch"><canvas id="c-speed" role="img" aria-label="Average days to issue by year"></canvas></div></div>
     </section>
 
     <section class="card">
@@ -569,7 +573,7 @@ function rampColor(t){ // cividis: perceptually uniform, colour-blind- and greys
 // `ppy` (avg permits/year) is the volume metric that replaced the old count bubbles.
 const CHORO_METRICS = {
   ppy: {label:'Avg permits / year', short:'avg permits per year', log:true,  minN:1, get:c=>c.ppy,           fmt:v=>`${v>=10?Math.round(v).toLocaleString():v.toFixed(1)}/yr`},
-  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.n?c.cost/c.n:null, fmt:v=>fmt$(v)},
+  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.avgc,             fmt:v=>fmt$(v)},
   dti: {label:'Avg days to issue', short:'avg days to issue', log:false, minN:5, get:c=>c.dti,             fmt:v=>`${Math.round(v)} d`},
   comp:{label:'Completion rate',   short:'completion rate',   log:false, minN:5, get:c=>c.comp,            fmt:v=>`${Math.round(v*100)}%`}
 };
@@ -768,7 +772,7 @@ const D = {
     this.busy(true);
     try{
       const where=this.where(), q=this.qParam();
-      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', ...(where?{where}:{}) , ...q}, signal);
+      const head = await soql({select:`count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn, sum(case(workclass='New',1,true,0)) as newn`, ...(where?{where}:{}) , ...q}, signal);
       if(seq!==this._seq) return;                 // a newer filter change superseded this one
       this.total = +head[0].n||0;
       if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0],seq,signal);
@@ -783,15 +787,15 @@ const D = {
   async enterCity(where,q,head,seq,signal){
     const W = w => { const conds=[w,where].filter(Boolean).join(' AND '); return conds?{where:conds}:{}; };
     const [yr, cls, work, month, contr, status, comms, costh, dtih] = await Promise.all([
-      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
+      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}, signal),
       soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}, signal),
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
-      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(date_diff_d(issueddate,applieddate)) as d, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
       soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
-      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
+      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL AND date_diff_d(issueddate,applieddate)>=0'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
     if(seq!=null && seq!==this._seq) return;       // superseded while loading
     this.mode='city'; this.rows=null; this.renovLags=[];
@@ -801,9 +805,9 @@ const D = {
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
-      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,resolved=n-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
+      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,sn=+r.sn||0,resolved=sn-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
       costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
-      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d}
+      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d, avgc:head.avgc==null?null:+head.avgc, costn:+head.costn||0, newn:+head.newn||0}
     };
     this.render();
     if(this.cmpSel && this.cmpSel.length) this.cmpRun();   // keep the compare panel in sync with the current filters
@@ -820,7 +824,7 @@ const D = {
       applied:r.applieddate?r.applieddate.slice(0,10):null,
       year:r.applieddate?+r.applieddate.slice(0,4):null,
       month:r.applieddate?+r.applieddate.slice(5,7)-1:null,
-      dti:(r.applieddate&&r.issueddate)?Math.max(0,Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,
+      dti:(r.applieddate&&r.issueddate)?(dd=>dd>=0?dd:null)(Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,   // negative = data error → excluded, matching the server-side case() guard
       type:r.permittype, cls:r.permitclassgroup||'Unspecified', clsDetail:r.permitclass,
       work:r.workclass||'Unspecified', desc:r.description,
       contractor:r.contractorname, units:+r.housingunits||0,
@@ -892,7 +896,7 @@ const D = {
     const h=s.head;
     document.getElementById('k-count').textContent=fmtN(h.n);
     document.getElementById('k-cost').textContent=fmt$(h.c);
-    document.getElementById('k-cost-n').textContent='estimated project cost';
+    document.getElementById('k-cost-n').textContent = detail||!h.costn ? 'estimated project cost' : `estimates on file for ${fmtN(h.costn)} of ${fmtN(h.n)} permits`;
     document.getElementById('k-units').textContent=fmtN(h.u);
     if(detail){
       const costs=this.rows.map(d=>d.cost).filter(v=>v!=null);
@@ -906,13 +910,12 @@ const D = {
       document.getElementById('k-dti-n').textContent='';
     }else{
       document.getElementById('k-med-l').textContent='Avg project cost';
-      document.getElementById('k-med').textContent=h.n?fmt$(h.c/h.n):'—';
+      document.getElementById('k-med').textContent=fmt$(h.avgc);
       document.getElementById('k-med-n').textContent='median needs detail view';
       document.getElementById('k-dti-l').textContent='Avg days to issue';
       document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
       document.getElementById('k-dti-n').textContent='';
-      const nw=s.work.find(w=>w[0]==='New');
-      document.getElementById('k-count-n').textContent=nw&&h.n?`${(nw[1]/h.n*100).toFixed(0)}% new construction`:'';
+      document.getElementById('k-count-n').textContent=h.n?`${(h.newn/h.n*100).toFixed(0)}% new construction`:'';   // dedicated aggregate — independent of the top-8 work-class truncation
     }
     const done=(s.status.find(x=>x[0]==='Completed')||[null,0])[1];
     const open=['In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'];
@@ -926,6 +929,8 @@ const D = {
     set(this.charts.month,MONTHS,s.month);
     set(this.charts.contr,s.contr.map(c=>String(c[0]).length>26?String(c[0]).slice(0,25)+'…':c[0]),s.contr.map(c=>c[1]));
     set(this.charts.speed,s.yr.map(r=>r.k),s.yr.map(r=>r.d));
+    { const sh=document.getElementById('speed-hint'); if(sh) sh.textContent=detail?'— median days applied→issued, by year':'— avg days applied→issued, by year';   // detail plots client-side medians; city plots server averages
+      const sc=document.getElementById('c-speed'); if(sc&&sc.setAttribute) sc.setAttribute('aria-label',(detail?'Median':'Average')+' days to issue by year'); }
     let cp=0,cu=0;
     set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n),s.yr.map(r=>cu+=r.u));
     if(detail){
@@ -958,7 +963,7 @@ const D = {
     this.charts.contr=new Chart(document.getElementById('c-contr'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:C.purple+'CC',borderRadius:4}]},
       options:{...base,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true}}}});
     this.charts.speed=new Chart(document.getElementById('c-speed'),{type:'line',data:{labels:[],datasets:[{label:'Days',data:[],borderColor:C.red,backgroundColor:C.red+'22',borderWidth:2,tension:.3,fill:true,pointRadius:3,pointBackgroundColor:C.red,spanGaps:true}]},
-      options:{...base,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y==null?'—':c.parsed.y.toFixed(0)} days`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'days'}}}}});
+      options:{...base,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y==null?'—':c.parsed.y.toFixed(0)} days (${D.mode==='detail'?'median':'avg'})`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'days'}}}}});
     this.charts.cum=new Chart(document.getElementById('c-cum'),{type:'line',data:{labels:[],datasets:[
       {label:'Cumulative permits',data:[],borderColor:C.blue,backgroundColor:C.blue+'25',borderWidth:2,tension:.2,fill:true,pointRadius:2,yAxisID:'y'},
       {label:'Cumulative housing units',data:[],borderColor:C.green,borderWidth:2,tension:.2,fill:false,pointRadius:2,yAxisID:'y1'}
@@ -1103,6 +1108,7 @@ const D = {
     if(this._cmpAc){ try{ this._cmpAc.abort(); }catch(e){} this._cmpAc=null; }
     this.renderCmpChips(); this.writeURL(); this.renderCompare();
   },
+  cmpRetry(){ this.clearError(); return this.cmpRun(); },   // re-runs every selected community (successes simply refresh)
   renderCmpChips(){
     const wrap=document.getElementById('cmp-chips'); if(!wrap) return;
     wrap.innerHTML=this.cmpSel.map((n,i)=>`<span class="cmp-chip" style="background:${this.cmpColor(i)}"><span class="sw"></span>${esc(n)}<button type="button" aria-label="Remove ${esc(n).replace(/"/g,'&quot;')}" onclick="D.cmpRemove('${esc(n).replace(/'/g,"\\'")}')">×</button></span>`).join('');
@@ -1136,16 +1142,18 @@ const D = {
     try{
       const names=this.cmpSel.slice();
       const results=await Promise.all(names.map(nm=>soql({
-        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, sum(date_diff_d(issueddate,applieddate)) as dsum, sum(case(issueddate IS NOT NULL,1,true,0)) as dcnt, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
+        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as dsum, sum(case(date_diff_d(issueddate,applieddate)>=0,1,true,0)) as dcnt, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
         where:this.cmpWhere(nm), group:'k', order:'k'
-      },signal).catch(e=>{ if(isAbort(e)) throw e; return null; })));
+      },signal).catch(e=>{ if(isAbort(e)) throw e; return {error:(e&&e.message)||'request failed'}; })));   // sentinel — a failed community must never render as zeros
       if(seq!==this._cmpSeq) return;                              // superseded by a newer selection/filter
       const data={};
       names.forEach((nm,idx)=>{
-        const rows=(results[idx]||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,done:+r.done||0,openn:+r.openn||0}));
-        const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,u:0,dsum:0,dcnt:0,done:0,openn:0});
-        data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.n?t.c/t.n:null, dti:t.dcnt?t.dsum/t.dcnt:null,
-          comp:(t.n-t.openn)>0?t.done/(t.n-t.openn):null, ppy:t.n/span };
+        const res=results[idx];
+        if(res&&res.error){ data[nm]={error:res.error}; return; }   // keep the failure visible to renderCompare
+        const rows=(res||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,cn:+r.cn||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,sn:+r.sn||0,done:+r.done||0,openn:+r.openn||0}));
+        const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,cn:a.cn+r.cn,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,sn:a.sn+r.sn,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,cn:0,u:0,dsum:0,dcnt:0,sn:0,done:0,openn:0});
+        data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.cn?t.c/t.cn:null, dti:t.dcnt?t.dsum/t.dcnt:null,
+          comp:(t.sn-t.openn)>0?t.done/(t.sn-t.openn):null, ppy:t.n/span };   // resolved = non-null statuses − open, same rule as the KPI/choropleth
       });
       this.cmpData=data; this.renderCompare();
     }catch(e){ if(!isAbort(e)&&seq===this._cmpSeq) this.error(e.message); }
@@ -1153,9 +1161,15 @@ const D = {
   },
   renderCompare(){
     const empty=document.getElementById('cmp-empty'), body=document.getElementById('cmp-body');
-    const names=this.cmpSel.filter(n=>this.cmpData[n]);
+    const sel=this.cmpSel.filter(n=>this.cmpData[n]);
+    const names=sel.filter(n=>!this.cmpData[n].error);       // failed communities are excluded from the table, chart and best-rankings
+    const failed=sel.filter(n=>!!this.cmpData[n].error);
+    const notice=document.getElementById('cmp-notice');
+    if(notice) notice.innerHTML = failed.length
+      ? `Couldn’t load ${failed.map(n=>esc(n)).join(', ')}. <a href="#" onclick="D.cmpRetry();return false;">Retry</a>`
+      : '';
     if(!names.length){
-      if(empty&&empty.style) empty.style.display='';
+      if(empty&&empty.style) empty.style.display = failed.length ? 'none' : '';   // all-failed: the notice explains the empty panel, not the picker prompt
       if(body&&body.style) body.style.display='none';
       if(this.charts.compare){ this.charts.compare.data.labels=[]; this.charts.compare.data.datasets=[]; try{this.charts.compare.update('none');}catch(e){} }
       return;
@@ -1309,7 +1323,11 @@ const D = {
   },
 
   // --- CSV export of the current filtered selection ---
-  csvCell(v){ if(v==null)v=''; v=String(v); return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; },
+  csvCell(v){
+    if(v==null)v=''; v=String(v);
+    if(/^[=+\-@\t\r]/.test(v) && !/^-?\d+(\.\d+)?$/.test(v)) v="'"+v;   // neutralize spreadsheet formulas in applicant-controlled text; plain numbers stay numeric
+    return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  },
   exportCsv(){
     if(this.total===0){ return; }
     const stamp=new Date().toISOString().slice(0,10);
