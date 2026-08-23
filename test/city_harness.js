@@ -87,6 +87,8 @@ eval(src+'\nglobalThis.D=D;');
   // --- static source contracts: string-level guards for load-bearing markup/CSS the DOM stubs can't exercise ---
   check('collapsed grids use minmax(0,1fr) so canvases cannot force mobile overflow', html.includes('.grid.two,.grid.three{grid-template-columns:minmax(0,1fr)}'), (html.match(/@media\(max-width:920px\)[^\n]*/)||[])[0]);
   check('grid cards defend min-width:0 against intrinsic canvas width', /\.grid \.card\{margin-bottom:0;min-width:0\}/.test(html), (html.match(/\.grid \.card\{[^}]*\}/)||[])[0]);
+  check('all three CDN assets carry SRI + CORS attributes', (html.match(/integrity="sha384-/g)||[]).length===3 && (html.match(/crossorigin="anonymous"/g)||[]).length===3, {integrity:(html.match(/integrity="sha384-/g)||[]).length, crossorigin:(html.match(/crossorigin="anonymous"/g)||[]).length});
+  check('chart.js pinned to its explicit dist file (stable SRI target)', html.includes('chart.js@4.5.1/dist/chart.umd.min.js'), (html.match(/cdn\.jsdelivr[^"]*/)||[])[0]);
 
   await new Promise(r=>setTimeout(r,50)); // let init's async finish
   console.log('after init: year options:', el('f-y1').options.length, '| communities:', D.communities.length);
