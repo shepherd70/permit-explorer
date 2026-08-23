@@ -47,7 +47,9 @@ global.fetch=async(url)=>{
     const det = n<=30000;
     // avgc/costn deliberately DISAGREE with c/n (c/n ≈ $63K city) so a regression back to
     // sum/count(1) for the "Avg project cost" KPI is caught, not masked by consistent stubs.
-    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6',avgc:det?'150000':'70000',costn:det?'1400':'450000'}]);
+    // newn (260000) deliberately ≠ the work-class stub's New count (250000): the % new note must
+    // come from this aggregate, not from searching the truncated top-8 work array.
+    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6',avgc:det?'150000':'70000',costn:det?'1400':'450000',newn:det?'500':'260000'}]);
   }
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done'))   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
     return json([{k:'2018',n:'500',c:'1.0e8',cn:'400',u:'200',dsum:'10000',dcnt:'480',sn:'490',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',cn:'500',u:'250',dsum:'13000',dcnt:'580',sn:'590',done:'550',openn:'25'}]);
@@ -106,6 +108,7 @@ eval(src+'\nglobalThis.D=D;');
   // avg cost must come from avg(estprojectcost) — sum/count(1) would show $63K here (audit 2026-07 major)
   check('city KPI avg project cost = avg(estprojectcost), not sum/count(1)', el('k-med').textContent==='$70K', el('k-med').textContent);
   check('city KPI cost-coverage note disclosed', digits(el('k-cost-n').textContent)==='450000490787', el('k-cost-n').textContent);
+  check('city % new construction uses the dedicated newn aggregate (53%, not 51% from top-8)', el('k-count-n').textContent==='53% new construction', el('k-count-n').textContent);
   check('city year chart points', D.charts.year.data.labels.length===2, D.charts.year.data.labels.length);
   check('city communities loaded', D.stats.comms.length===2, D.stats.comms.length);
   check('community stats carry server avg cost (avgc) for the choropleth', D.stats.comms.every(c=>typeof c.avgc==='number'&&c.avgc>0), D.stats.comms.map(c=>c.avgc));

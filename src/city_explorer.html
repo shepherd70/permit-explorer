@@ -768,7 +768,7 @@ const D = {
     this.busy(true);
     try{
       const where=this.where(), q=this.qParam();
-      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn', ...(where?{where}:{}) , ...q}, signal);
+      const head = await soql({select:`count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn, sum(case(workclass='New',1,true,0)) as newn`, ...(where?{where}:{}) , ...q}, signal);
       if(seq!==this._seq) return;                 // a newer filter change superseded this one
       this.total = +head[0].n||0;
       if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0],seq,signal);
@@ -803,7 +803,7 @@ const D = {
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
       comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,sn=+r.sn||0,resolved=sn-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
       costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
-      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d, avgc:head.avgc==null?null:+head.avgc, costn:+head.costn||0}
+      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d, avgc:head.avgc==null?null:+head.avgc, costn:+head.costn||0, newn:+head.newn||0}
     };
     this.render();
     if(this.cmpSel && this.cmpSel.length) this.cmpRun();   // keep the compare panel in sync with the current filters
@@ -911,8 +911,7 @@ const D = {
       document.getElementById('k-dti-l').textContent='Avg days to issue';
       document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
       document.getElementById('k-dti-n').textContent='';
-      const nw=s.work.find(w=>w[0]==='New');
-      document.getElementById('k-count-n').textContent=nw&&h.n?`${(nw[1]/h.n*100).toFixed(0)}% new construction`:'';
+      document.getElementById('k-count-n').textContent=h.n?`${(h.newn/h.n*100).toFixed(0)}% new construction`:'';   // dedicated aggregate — independent of the top-8 work-class truncation
     }
     const done=(s.status.find(x=>x[0]==='Completed')||[null,0])[1];
     const open=['In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'];
