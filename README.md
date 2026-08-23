@@ -1,5 +1,8 @@
 # permit-explorer
 
+[![CI](https://github.com/shepherd70/permit-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/shepherd70/permit-explorer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A live, single-page tool for exploring City of Calgary building-permit data —
 all 490K+ permits across every community, queried from Calgary's open-data API
 in your browser. One self-contained static HTML file, no backend, served at the
@@ -41,12 +44,14 @@ costs, and the renovation-lifecycle analysis.
 browser (needs internet for the live API). To produce the deployable site:
 
 ```bash
-npm run build      # python build.py  ->  dist/index.html (+ dist/_headers)
+npm run build      # python build.py  ->  dist/ (index.html + _headers, sitemap.xml, robots.txt)
 ```
 
 `build.py` is standard-library Python (no dependencies): it publishes the
 explorer as `dist/index.html` so it serves at the site root, and copies the
-Cloudflare [`_headers`](_headers) file alongside it.
+root-level deploy files — the Cloudflare [`_headers`](_headers), [`sitemap.xml`](sitemap.xml),
+and [`robots.txt`](robots.txt) — into `dist/` alongside it (anything that must be
+reachable at `/` has to be in `dist/`, since Cloudflare Pages serves that directory).
 
 ## Hosting
 
@@ -73,7 +78,9 @@ Until that rule is active, search engines rely on the canonical link alone.
 
 `dist/` is committed, so the site serves correctly even if the build step is
 skipped. [`_headers`](_headers) adds security headers and a Content-Security-Policy
-scoped to the app's CDN/API origins; `build.py` copies it into `dist/`.
+scoped to the app's CDN/API origins; `build.py` copies it into `dist/`. The two
+CDN assets (Chart.js, Leaflet) are loaded with Subresource Integrity (`integrity`
++ `crossorigin`) so a compromised CDN can't inject code.
 
 ## Testing
 
@@ -88,7 +95,9 @@ npm test           # node test/city_harness.js
 ```
 
 CI (`.github/workflows/ci.yml`) runs the build and the harness on every push and
-pull request.
+pull request, and fails if the committed `dist/` has drifted from a fresh build.
+Actions are pinned to commit SHAs and kept current by Dependabot
+([`.github/dependabot.yml`](.github/dependabot.yml)).
 
 `npm test` is deterministic and offline (canned API responses), so it can't
 notice if Calgary changes the live dataset. A separate **live-API smoke test**
@@ -112,13 +121,17 @@ affiliated with or endorsed by The City of Calgary.
 ## Project layout
 
 ```
-build.py                publishes src/city_explorer.html as dist/index.html (+ _headers)
+build.py                publishes src/city_explorer.html as dist/ (+ passthrough deploy files)
 src/city_explorer.html  the explorer (self-contained HTML/CSS/JS; no framework)
-dist/                   deployable output (index.html + _headers); served at the site root
+src/m0_validate.py      standalone dev utility: probes Calgary open-data feeds for freshness/schema
+dist/                   deployable output (index.html + _headers, sitemap.xml, robots.txt); served at the site root
 _headers                Cloudflare security headers + CSP
+sitemap.xml, robots.txt SEO files, published to the deploy root by build.py
 test/city_harness.js    headless verification harness
 test/smoke.js           live-API smoke test
-docs/                   design briefs and project documentation
-.github/workflows/      CI (tests) and the daily live-API smoke test
+package.json            npm scripts (test / smoke / build); no dependencies
+docs/                   design briefs, audit reports, and project documentation
+.github/workflows/      CI (tests + dist-drift gate) and the daily live-API smoke test
+.github/dependabot.yml  weekly GitHub Actions version updates
 TASKS.md                development task tracker
 ```
