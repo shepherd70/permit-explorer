@@ -569,7 +569,7 @@ function rampColor(t){ // cividis: perceptually uniform, colour-blind- and greys
 // `ppy` (avg permits/year) is the volume metric that replaced the old count bubbles.
 const CHORO_METRICS = {
   ppy: {label:'Avg permits / year', short:'avg permits per year', log:true,  minN:1, get:c=>c.ppy,           fmt:v=>`${v>=10?Math.round(v).toLocaleString():v.toFixed(1)}/yr`},
-  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.n?c.cost/c.n:null, fmt:v=>fmt$(v)},
+  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.avgc,             fmt:v=>fmt$(v)},
   dti: {label:'Avg days to issue', short:'avg days to issue', log:false, minN:5, get:c=>c.dti,             fmt:v=>`${Math.round(v)} d`},
   comp:{label:'Completion rate',   short:'completion rate',   log:false, minN:5, get:c=>c.comp,            fmt:v=>`${Math.round(v*100)}%`}
 };
@@ -768,7 +768,7 @@ const D = {
     this.busy(true);
     try{
       const where=this.where(), q=this.qParam();
-      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d', ...(where?{where}:{}) , ...q}, signal);
+      const head = await soql({select:'count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(date_diff_d(issueddate,applieddate)) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn', ...(where?{where}:{}) , ...q}, signal);
       if(seq!==this._seq) return;                 // a newer filter change superseded this one
       this.total = +head[0].n||0;
       if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0],seq,signal);
@@ -789,7 +789,7 @@ const D = {
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
       soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
-      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(date_diff_d(issueddate,applieddate)) as d, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, avg(date_diff_d(issueddate,applieddate)) as d, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
       soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
       soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
@@ -801,9 +801,9 @@ const D = {
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
-      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,resolved=n-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
+      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,resolved=n-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
       costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
-      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d}
+      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d, avgc:head.avgc==null?null:+head.avgc, costn:+head.costn||0}
     };
     this.render();
     if(this.cmpSel && this.cmpSel.length) this.cmpRun();   // keep the compare panel in sync with the current filters
@@ -892,7 +892,7 @@ const D = {
     const h=s.head;
     document.getElementById('k-count').textContent=fmtN(h.n);
     document.getElementById('k-cost').textContent=fmt$(h.c);
-    document.getElementById('k-cost-n').textContent='estimated project cost';
+    document.getElementById('k-cost-n').textContent = detail||!h.costn ? 'estimated project cost' : `estimates on file for ${fmtN(h.costn)} of ${fmtN(h.n)} permits`;
     document.getElementById('k-units').textContent=fmtN(h.u);
     if(detail){
       const costs=this.rows.map(d=>d.cost).filter(v=>v!=null);
@@ -906,7 +906,7 @@ const D = {
       document.getElementById('k-dti-n').textContent='';
     }else{
       document.getElementById('k-med-l').textContent='Avg project cost';
-      document.getElementById('k-med').textContent=h.n?fmt$(h.c/h.n):'—';
+      document.getElementById('k-med').textContent=fmt$(h.avgc);
       document.getElementById('k-med-n').textContent='median needs detail view';
       document.getElementById('k-dti-l').textContent='Avg days to issue';
       document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
@@ -1136,15 +1136,15 @@ const D = {
     try{
       const names=this.cmpSel.slice();
       const results=await Promise.all(names.map(nm=>soql({
-        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, sum(date_diff_d(issueddate,applieddate)) as dsum, sum(case(issueddate IS NOT NULL,1,true,0)) as dcnt, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
+        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(date_diff_d(issueddate,applieddate)) as dsum, sum(case(issueddate IS NOT NULL,1,true,0)) as dcnt, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
         where:this.cmpWhere(nm), group:'k', order:'k'
       },signal).catch(e=>{ if(isAbort(e)) throw e; return null; })));
       if(seq!==this._cmpSeq) return;                              // superseded by a newer selection/filter
       const data={};
       names.forEach((nm,idx)=>{
-        const rows=(results[idx]||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,done:+r.done||0,openn:+r.openn||0}));
-        const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,u:0,dsum:0,dcnt:0,done:0,openn:0});
-        data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.n?t.c/t.n:null, dti:t.dcnt?t.dsum/t.dcnt:null,
+        const rows=(results[idx]||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,cn:+r.cn||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,done:+r.done||0,openn:+r.openn||0}));
+        const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,cn:a.cn+r.cn,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,cn:0,u:0,dsum:0,dcnt:0,done:0,openn:0});
+        data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.cn?t.c/t.cn:null, dti:t.dcnt?t.dsum/t.dcnt:null,
           comp:(t.n-t.openn)>0?t.done/(t.n-t.openn):null, ppy:t.n/span };
       });
       this.cmpData=data; this.renderCompare();

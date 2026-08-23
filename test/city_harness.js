@@ -45,14 +45,16 @@ global.fetch=async(url)=>{
       : m ? m[1].split(',').reduce((s,t)=>s+(CAT_N[t.replace(/'/g,'').trim()]||0),0)
       : 490787;
     const det = n<=30000;
-    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6'}]);
+    // avgc/costn deliberately DISAGREE with c/n (c/n ≈ $63K city) so a regression back to
+    // sum/count(1) for the "Avg project cost" KPI is caught, not masked by consistent stubs.
+    return json([{n:String(n),c:det?'220000000':'3.1e10',u:det?'949':'356804',d:'23.6',avgc:det?'150000':'70000',costn:det?'1400':'450000'}]);
   }
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('done'))   // compare-communities per-community yearly series (has done/openn; checked before the generic yearly branch)
-    return json([{k:'2018',n:'500',c:'1.0e8',u:'200',dsum:'10000',dcnt:'480',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',u:'250',dsum:'13000',dcnt:'580',done:'550',openn:'25'}]);
+    return json([{k:'2018',n:'500',c:'1.0e8',cn:'400',u:'200',dsum:'10000',dcnt:'480',done:'450',openn:'20'},{k:'2019',n:'600',c:'1.2e8',cn:'500',u:'250',dsum:'13000',dcnt:'580',done:'550',openn:'25'}]);
   if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('sum'))
     return json([{k:'2018',n:'16689',c:'4.4e9',u:'8000',d:'20'},{k:'2019',n:'17373',c:'4.6e9',u:'9000',d:'22'}]);
   if(grp==='k'&&sel.includes('date_extract_y')) return json([{k:'1999',n:'6991'},{k:'2026',n:'8462'}]);
-  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',d:'23.9',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',d:'20',done:'1400',openn:'40'}]);
+  if(grp==='k'&&sel.includes('communityname')) return json([{k:'DOWNTOWN COMMERCIAL CORE',n:'14614',lat:'51.045',lng:'-114.07',c:'9.0e9',avgc:'650000',d:'23.9',done:'13223',openn:'492'},{k:'HARVEST HILLS',n:'1480',lat:'51.14',lng:'-114.06',c:'2.2e8',avgc:'160000',d:'20',done:'1400',openn:'40'}]);
   if(grp==='k'&&sel.includes('permitclassgroup')) return json([{k:'Single Family',n:'200000'},{k:'Garage',n:'50000'}]);
   if(grp==='k'&&sel.includes('workclass')) return json([{k:'New',n:'250000'},{k:'Alteration',n:'180000'}]);
   if(grp==='k'&&sel.includes('statuscurrent')) return json([{k:'Completed',n:'400000'},{k:'Cancelled',n:'20000'},{k:'Issued Permit',n:'30000'}]);
@@ -101,8 +103,12 @@ eval(src+'\nglobalThis.D=D;');
   check('city KPI total cost', el('k-cost').textContent==='$31.00B', el('k-cost').textContent);
   check('city KPI avg days-to-issue', el('k-dti').textContent==='24', el('k-dti').textContent);
   check('city KPI completion rate', el('k-comp').textContent==='95%', el('k-comp').textContent);
+  // avg cost must come from avg(estprojectcost) — sum/count(1) would show $63K here (audit 2026-07 major)
+  check('city KPI avg project cost = avg(estprojectcost), not sum/count(1)', el('k-med').textContent==='$70K', el('k-med').textContent);
+  check('city KPI cost-coverage note disclosed', digits(el('k-cost-n').textContent)==='450000490787', el('k-cost-n').textContent);
   check('city year chart points', D.charts.year.data.labels.length===2, D.charts.year.data.labels.length);
   check('city communities loaded', D.stats.comms.length===2, D.stats.comms.length);
+  check('community stats carry server avg cost (avgc) for the choropleth', D.stats.comms.every(c=>typeof c.avgc==='number'&&c.avgc>0), D.stats.comms.map(c=>c.avgc));
   check('city table rendered', /<tbody>/.test(el('tbl').innerHTML));
   check('renov card locked in city mode', el('card-renov').classList._s.has('locked')===true);
   check('city insights generated', (el('insights').innerHTML.match(/class="insight"/g)||[]).length>=5);
@@ -233,6 +239,7 @@ eval(src+'\nglobalThis.D=D;');
   console.log('COMPARE: keys:', Object.keys(D.cmpData), '| HH n:', D.cmpData['HARVEST HILLS']&&D.cmpData['HARVEST HILLS'].n, '| chart series:', D.charts.compare.data.datasets.length);
   check('compare fetched both communities', !!D.cmpData['DOWNTOWN COMMERCIAL CORE'] && !!D.cmpData['HARVEST HILLS'], Object.keys(D.cmpData));
   check('compare totals summed across years (500+600)', D.cmpData['HARVEST HILLS'].n===1100, D.cmpData['HARVEST HILLS'].n);
+  check('compare avg cost / permit divides by cost-bearing permits (cn)', Math.abs(D.cmpData['HARVEST HILLS'].avgCost-(2.2e8/900))<1e-6, D.cmpData['HARVEST HILLS'].avgCost);
   check('compare completion = done / resolved', Math.abs(D.cmpData['HARVEST HILLS'].comp-(1000/(1100-45)))<1e-6, D.cmpData['HARVEST HILLS'].comp);
   check('compare chart has one line per community', D.charts.compare.data.datasets.length===2, D.charts.compare.data.datasets.length);
   check('compare table rendered', /<table class="cmp"/.test(el('cmp-table').innerHTML), el('cmp-table').innerHTML.slice(0,40));
