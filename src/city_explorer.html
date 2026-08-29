@@ -248,6 +248,19 @@ table.cmp tbody tr:last-child td{border-bottom:none}
 table.cmp td.best{color:var(--accent);font-weight:700}
 table.cmp .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
 
+/* application → construction pipeline card */
+.pl-stat{font-size:13.5px;color:var(--text-2);padding:8px 0;border-bottom:1px solid var(--border)}
+.pl-stat b{color:var(--text);font-size:15px}
+.pl-sub{color:var(--text-3);font-size:12.5px}
+.pl-warn{color:var(--neg);font-size:12px}
+.pl-empty{font-size:13.5px;color:var(--text-2);padding:12px 0}
+.pl-cats{margin-top:12px;display:flex;flex-direction:column;gap:7px}
+.pl-cat{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-2)}
+.pl-cat-name{flex:0 1 46%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pl-bar{flex:1;height:8px;background:var(--surface-3);border-radius:4px;overflow:hidden}
+.pl-bar i{display:block;height:100%;background:var(--accent);border-radius:4px}
+.pl-cat-pct{flex:none;width:34px;text-align:right;color:var(--text)}
+
 /* locked overlay */
 .overlay{position:absolute;inset:0;background:color-mix(in srgb,var(--surface) 88%,transparent);backdrop-filter:blur(1px);
   display:none;align-items:center;justify-content:center;border-radius:var(--r);z-index:5;padding:24px;text-align:center}
@@ -359,6 +372,7 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
           <li><b>Days to issue</b> = issued date − applied date; <b>days to decision</b> (development) = decision date − applied date. Rare records whose dates run backwards are excluded.</li>
           <li><b>Completion rate</b> = completed ÷ resolved permits (excludes ones still in review or on hold). <b>Approval rate</b> (development) = approvals ÷ decided applications (approvals + refusals, incl. deemed refusals).</li>
           <li>About 29% of development permits — nearly all filed before 2000 — have no category and appear as <b>(uncategorized)</b>; the city flags its 1979–2000 development records as legacy data, so treat those early years as incomplete.</li>
+          <li><b>Application → construction</b> (development view, one community drilled) joins each released development permit to building-permit applications at the <i>same parcel</i> — unit-level addresses are matched at the parcel, and only applications filed since the building-permit records begin (1999) are scored. Same parcel and later in time doesn't guarantee the same project, so read it as a conversion tendency, not a per-permit link.</li>
           <li><b>Renovation lifecycle</b> pairs a new build with the first later non-demolition permit at the same address.</li>
           <li>The map shades each community's area by your chosen metric in city view, and plots individual permit locations in detail view.</li>
         </ul>
@@ -485,6 +499,8 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
       <div class="card" id="card-costh"><div class="card-head"><h3>Project cost distribution</h3><span class="hint" id="costh-hint"></span></div><div class="ch"><canvas id="c-costh" role="img" aria-label="Distribution of project cost"></canvas></div></div>
       <div class="card" id="card-dtih"><div class="card-head"><h3 id="t-dtih">Days-to-issue distribution</h3></div><div class="ch"><canvas id="c-dtih" role="img" aria-label="Distribution of days to issue"></canvas></div></div>
       <div class="card" id="card-renov"><div class="card-head"><h3>Renovation lifecycle</h3><span class="hint">— years from new build to first renovation</span></div><div class="ch"><canvas id="c-renov" role="img" aria-label="Years from new build to first renovation"></canvas></div><div class="overlay"><span>Available in detail view — filter to under 30,000 permits (e.g. one community, or one year city-wide).</span></div></div>
+      <div class="card" id="card-outcomes" style="display:none"><div class="card-head"><h3>Decision outcomes by year</h3><span class="hint">— approvals vs. refusals, by year applied</span></div><div class="ch"><canvas id="c-outcomes" role="img" aria-label="Development-permit approvals and refusals by year"></canvas></div></div>
+      <div class="card" id="card-pipeline" style="display:none"><div class="card-head"><h3>Application &rarr; construction</h3><span class="hint">— released applications later seeing a building permit at the same parcel</span></div><div id="pipeline-body"></div><div class="overlay"><span>Drill into a community to trace its approvals into construction permits (the join needs the community's full building-permit history).</span></div></div>
     </section>
 
     <section class="card">
@@ -534,6 +550,9 @@ const median = a => {if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);co
 const binCounts=(vals,bins)=>{const out=bins.map(()=>0);vals.forEach(v=>{for(let i=0;i<bins.length;i++){if(v<=bins[i].max){out[i]++;break;}}});return out;};
 const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 const sq=s=>String(s).replace(/'/g,"''");
+// parcel-level address key: uppercase, collapse whitespace, strip a leading "#UNIT " —
+// "#440 318 11 AV SE" and "318 11 AV SE" join to the same parcel (DP↔BP address join)
+const parcelKey=a=>String(a==null?'':a).trim().toUpperCase().replace(/\s+/g,' ').replace(/^#\S+ /,'');
 
 function isDark(){ try{ return document.documentElement.getAttribute('data-theme')==='dark'; }catch(e){ return false; } }
 function tileUrl(){ return isDark()?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png':'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'; }
@@ -555,9 +574,9 @@ function applyChartDefaults(){
 
 const isAbort = e => !!e && (e.name==='AbortError' || e.code===20);
 
-async function soql(params,signal){
+async function soql(params,signal,api){                    // api overrides the active dataset's endpoint (the pipeline card's cross-dataset fetch)
   const qs = Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
-  const r = await fetch(`${D.ds.api}?${qs}`, signal?{signal}:undefined);
+  const r = await fetch(`${api||D.ds.api}?${qs}`, signal?{signal}:undefined);
   if(!r.ok){
     let body=''; try{ body=(await r.text()).slice(0,500); }catch(e){}
     if(r.status===429) throw new Error(`Calgary's open-data service is rate-limiting requests (HTTP 429). Please wait a few seconds and try again.`);
@@ -726,9 +745,9 @@ bp:{
 dp:{
   label:'Development',
   api:'https://data.calgary.ca/resource/6933-unw5.json',
-  fields:'permitnum,statuscurrent,applieddate,decisiondate,decision,category,permitteddiscretionary,description,applicant,landusedistrict,address,communityname,latitude,longitude,sdabhearingdate',
+  fields:'permitnum,statuscurrent,applieddate,decisiondate,decision,category,permitteddiscretionary,description,applicant,landusedistrict,address,locationaddresses,communityname,latitude,longitude,sdabhearingdate',
   head:"count(1) as n, avg(case(date_diff_d(decisiondate,applieddate)>=0,date_diff_d(decisiondate,applieddate))) as d, sum(case(decision='Approval',1,true,0)) as appr, sum(case(decision in('Refusal','Deemed Refusal'),1,true,0)) as refn, sum(case(permitteddiscretionary='Discretionary',1,true,0)) as discn, sum(case(statuscurrent='Released',1,true,0)) as reln, count(sdabhearingdate) as sdab",
-  minYear:1979, hasCost:false, hasUnits:false, renov:false,
+  minYear:1979, hasCost:false, hasUnits:false, renov:false, outcomes:true, pipeline:true,
   cat:{field:'category', nullable:true, nullLabel:'(uncategorized)'},   // 29% null — a pre-2000 legacy artifact; kept visible, never silently dropped
   sec:{field:'permitteddiscretionary', all:'All uses'},
   entity:{field:'applicant'},
@@ -738,7 +757,7 @@ dp:{
   searchPh:'address, applicant, keyword…',
   mapDetailHint:'— individual applications, coloured by category; click a point for details',
   initComms:'communityname as k, count(1) as n',                        // latitude/longitude are text on this dataset, and the choropleth joins by name anyway
-  cityYr:'date_extract_y(applieddate) as k, count(1) as n, avg(case(date_diff_d(decisiondate,applieddate)>=0,date_diff_d(decisiondate,applieddate))) as d',
+  cityYr:"date_extract_y(applieddate) as k, count(1) as n, avg(case(date_diff_d(decisiondate,applieddate)>=0,date_diff_d(decisiondate,applieddate))) as d, sum(case(decision='Approval',1,true,0)) as appr, sum(case(decision in('Refusal','Deemed Refusal'),1,true,0)) as refn",
   cityComms:"communityname as k, count(1) as n, avg(case(date_diff_d(decisiondate,applieddate)>=0,date_diff_d(decisiondate,applieddate))) as d, sum(case(decision='Approval',1,true,0)) as appr, sum(case(decision in('Refusal','Deemed Refusal'),1,true,0)) as refn",
   headRow(h){ return {n:+h.n||0, d:h.d==null?null:+h.d, appr:+h.appr||0, refn:+h.refn||0, discn:+h.discn||0, reln:+h.reln||0, sdab:+h.sdab||0}; },
   commRow(r,yspan){ const n=+r.n,appr=+r.appr||0,refn=+r.refn||0; return {name:r.k,n,dti:r.d==null?null:+r.d,apr:(appr+refn)>0?appr/(appr+refn):null,aprn:appr+refn,ppy:n/yspan}; },
@@ -748,11 +767,12 @@ dp:{
     year:r.applieddate?+r.applieddate.slice(0,4):null,
     month:r.applieddate?+r.applieddate.slice(5,7)-1:null,
     dti:(r.applieddate&&r.decisiondate)?(dd=>dd>=0?dd:null)(Math.round((new Date(r.decisiondate)-new Date(r.applieddate))/864e5)):null,   // negative = data error → excluded, matching the server-side case() guard
-    decision:r.decision||null, cls:r.category||'(uncategorized)',
+    decision:r.decision||null, decided:r.decisiondate?r.decisiondate.slice(0,10):null,
+    cls:r.category||'(uncategorized)',
     work:r.permitteddiscretionary||'Unspecified', desc:r.description,
     contractor:r.applicant, lud:r.landusedistrict, sdab:!!r.sdabhearingdate,
     cost:null, units:0,
-    addr:r.address, community:r.communityname,
+    addr:r.address, locs:r.locationaddresses, community:r.communityname,
     lat:r.latitude==null?null:+r.latitude, lng:r.longitude==null?null:+r.longitude
   }; },
   headFromRows(f){
@@ -857,7 +877,7 @@ const D = {
   sortCol:'applieddate', sortDir:'desc',
   stats:null, rows:null, allRows:null, renovLags:[], communities:[], cats:null, activeCats:null,
   charts:{}, map:null, layer:null, tileLayer:null, _busy:0,
-  _seq:0, _ac:null, _tblSeq:0, _acTbl:null,
+  _seq:0, _ac:null, _tblSeq:0, _acTbl:null, _plSeq:0,
   choroMetric:'ppy', boundaries:null, _bPromise:null,
   cmpSel:[], cmpData:{}, _cmpSeq:0, _cmpAc:null,
 
@@ -1159,7 +1179,7 @@ const D = {
     this.mode='city'; this.rows=null; this.renovLags=[];
     const yspan=Math.max(1,(+this.val('f-y2')||0)-(+this.val('f-y1')||0)+1);   // selected year-range span → avg permits/year
     this.stats = {
-      yr: yr.filter(r=>+r.k>=ds.minYear).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d})),
+      yr: yr.filter(r=>+r.k>=ds.minYear).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d,appr:+r.appr||0,refn:+r.refn||0})),
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
@@ -1199,12 +1219,12 @@ const D = {
     this.total = this.rows.length;
     const f=this.rows;
     const g={};
-    f.forEach(d=>{if(d.year==null)return;g[d.year]=g[d.year]||{n:0,c:0,u:0,ds:[]};const e=g[d.year];e.n++;e.c+=d.cost||0;e.u+=d.units;if(d.dti!=null)e.ds.push(d.dti);});
+    f.forEach(d=>{if(d.year==null)return;g[d.year]=g[d.year]||{n:0,c:0,u:0,a:0,rf:0,ds:[]};const e=g[d.year];e.n++;e.c+=d.cost||0;e.u+=d.units;if(d.decision==='Approval')e.a++;else if(d.decision==='Refusal'||d.decision==='Deemed Refusal')e.rf++;if(d.dti!=null)e.ds.push(d.dti);});
     const top=(field,lim)=>{const m={};f.forEach(d=>{const v=d[field];if(!v)return;m[v]=(m[v]||0)+1;});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,lim);};
     const mo=Array(12).fill(0);f.forEach(d=>{if(d.month!=null)mo[d.month]++;});
     const commMap={};f.forEach(d=>{if(!d.community||d.lat==null)return;const e=commMap[d.community]=commMap[d.community]||{n:0,cost:0,lat:0,lng:0};e.n++;e.cost+=d.cost||0;e.lat+=d.lat;e.lng+=d.lng;});
     this.stats = {
-      yr:Object.keys(g).map(Number).sort((a,b)=>a-b).map(k=>({k,n:g[k].n,c:g[k].c,u:g[k].u,d:median(g[k].ds)})),
+      yr:Object.keys(g).map(Number).sort((a,b)=>a-b).map(k=>({k,n:g[k].n,c:g[k].c,u:g[k].u,d:median(g[k].ds),appr:g[k].a,refn:g[k].rf})),
       cls:top('cls',9), work:top('work',8), month:mo, contr:top('contractor',10),
       status:top('status',20),
       comms:Object.entries(commMap).map(([name,e])=>({name,n:e.n,cost:e.cost,lat:e.lat/e.n,lng:e.lng/e.n})),
@@ -1224,6 +1244,7 @@ const D = {
     }
     this.render();
     this.detailTable();
+    if(this.ds.pipeline) this.updatePipeline();   // recomputes from cache on filter/search changes; fetches once per community
   },
 
   render(){
@@ -1239,8 +1260,12 @@ const D = {
     document.getElementById('count-badge').innerHTML = `<span class="num tnum">${fmtN(this.total)}</span> permits in scope`;
     document.getElementById('card-renov').classList.toggle('locked',!detail);
     { const cc=document.getElementById('card-compare'); if(cc&&cc.style) cc.style.display=detail?'none':''; }   // compare is a city-view panel
-    { const ch=document.getElementById('card-costh'); if(ch&&ch.style) ch.style.display=this.ds.hasCost?'':'none';   // cost & renovation cards exist only for datasets carrying those fields
-      const cr=document.getElementById('card-renov'); if(cr&&cr.style) cr.style.display=this.ds.renov?'':'none'; }
+    { const ch=document.getElementById('card-costh'); if(ch&&ch.style) ch.style.display=this.ds.hasCost?'':'none';   // per-dataset cards: cost/renovation (building) vs outcomes/pipeline (development)
+      const cr=document.getElementById('card-renov'); if(cr&&cr.style) cr.style.display=this.ds.renov?'':'none';
+      const co=document.getElementById('card-outcomes'); if(co&&co.style) co.style.display=this.ds.outcomes?'':'none';
+      const cp=document.getElementById('card-pipeline');
+      if(cp){ if(cp.style) cp.style.display=this.ds.pipeline?'':'none';
+        if(cp.classList&&cp.classList.toggle) cp.classList.toggle('locked', !(detail&&this.val('f-comm'))); } }   // pipeline needs a drilled community (full BP history is only bounded within one)
     if(this.ds.hasCost) document.getElementById('costh-hint').textContent = detail?'':(s.costh?`— ${fmtN(s.costh.reduce((a,b)=>a+b,0))} permits with cost data`:'— unavailable right now');
     this.ds.kpis(this,s,detail);
     const set=(ch,labels,...data)=>{ch.data.labels=labels;data.forEach((d,i)=>ch.data.datasets[i].data=d);ch.update('none');};
@@ -1253,6 +1278,7 @@ const D = {
     set(this.charts.speed,s.yr.map(r=>r.k),s.yr.map(r=>r.d));
     { const sh=document.getElementById('speed-hint'); if(sh) sh.textContent='— '+(detail?'median':'avg')+' days '+this.ds.speedNoun+', by year';   // detail plots client-side medians; city plots server averages
       const sc=document.getElementById('c-speed'); if(sc&&sc.setAttribute) sc.setAttribute('aria-label',(detail?'Median':'Average')+` days to ${this.ds.dtiWord} by year`); }
+    if(this.ds.outcomes&&this.charts.outcomes) set(this.charts.outcomes,s.yr.map(r=>r.k),s.yr.map(r=>r.appr),s.yr.map(r=>r.refn));
     let cp=0,cu=0;
     if(this.ds.hasUnits) set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n),s.yr.map(r=>cu+=r.u));
     else set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n));
@@ -1301,6 +1327,10 @@ const D = {
       options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
     this.charts.renov=new Chart(document.getElementById('c-renov'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:C.purple+'CC',borderRadius:4}]},
       options:{...base,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'years until first renovation'}},y:{beginAtZero:true}}}});
+    if(ds.outcomes) this.charts.outcomes=new Chart(document.getElementById('c-outcomes'),{type:'bar',data:{labels:[],datasets:[
+      {label:'Approvals',data:[],backgroundColor:C.green+'CC',borderRadius:3},
+      {label:'Refusals',data:[],backgroundColor:C.red+'CC',borderRadius:3}
+    ]},options:{...base,plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtN(c.parsed.y)}`}}},scales:{x:{stacked:true},y:{stacked:true,beginAtZero:true}}}});
     this.charts.compare=new Chart(document.getElementById('c-compare'),{type:'line',data:{labels:[],datasets:[]},
       options:{...base,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top'},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmtN(c.parsed.y)} permits`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'permits / year'}}}}});
   },
@@ -1416,6 +1446,86 @@ const D = {
   },
   retryBoundaries(){ this.clearError(); this.updateMap(); },   // boundaries/_bPromise are null after a failure, so updateMap re-enters the load
   setChoroMetric(m){ if(this.ds.choroMetrics[m]) this.choroMetric=m; this.writeURL(); this.updateMap(); },
+
+  // --- application → construction: join released DPs to BP applications at the same parcel ---
+  // One cached cross-dataset fetch per community (its FULL building-permit history, 2 fields);
+  // the stats then recompute client-side over the CURRENT filtered rows, so the category and
+  // search filters flow straight through with no further requests.
+  plKeys(d){ const out=new Set(); const add=a=>{ const k=parcelKey(a); if(k) out.add(k); };
+    add(d.addr); String(d.locs||'').split(';').forEach(add); return out; },
+  async bpFloorYear(){                                        // first year of BP data — earlier DPs can't be scored fairly (their real follow-up predates the records)
+    if(this._bpFloor) return this._bpFloor;
+    const yl=this._dsCache&&this._dsCache.bp&&this._dsCache.bp.years;
+    if(yl&&yl.length){
+      const ys=yl.map(r=>+r.k).filter(y=>y>=DATASETS.bp.minYear&&y<=2100);
+      if(ys.length){ this._bpFloor=String(Math.min(...ys)); return this._bpFloor; }
+    }
+    const r=await soql({select:'min(applieddate) as lo'},null,DATASETS.bp.api).catch(()=>null);   // only reached on a ?ds=dp deep link (bp option lists never fetched)
+    this._bpFloor=(r&&r[0]&&r[0].lo)?String(r[0].lo).slice(0,4):'1999';
+    return this._bpFloor;
+  },
+  async updatePipeline(){
+    if(!this.ds.pipeline || this.mode!=='detail') return;
+    const comm=this.val('f-comm'); if(!comm) return;          // year-only detail scope: the card stays overlay-locked
+    const seq=++this._plSeq;
+    const body=document.getElementById('pipeline-body');
+    if(!this._bpCache) this._bpCache={};
+    let cache=this._bpCache[comm];
+    if(!cache || !this._bpFloor){
+      if(body && !cache) body.innerHTML='<p class="pl-empty">Loading this community’s building-permit history…</p>';
+      this.busy(true);
+      try{
+        const floorP=this.bpFloorYear();                      // never rejects (falls back internally)
+        if(!cache){
+          const rows=await soql({select:'originaladdress,applieddate', where:`upper(communityname) = '${sq(String(comm).toUpperCase())}'`, limit:'30000'}, null, DATASETS.bp.api);
+          const ix={};
+          rows.forEach(r=>{ const k=parcelKey(r.originaladdress); if(!k||!r.applieddate) return; (ix[k]=ix[k]||[]).push(r.applieddate.slice(0,10)); });
+          Object.values(ix).forEach(a=>a.sort());             // ISO dates sort lexicographically = chronologically
+          cache=this._bpCache[comm]={ix, capped:rows.length>=30000};
+        }
+        await floorP;
+      }catch(e){
+        this.busy(false);
+        if(isAbort(e)) return;
+        if(seq===this._plSeq && body) body.innerHTML=`<p class="pl-empty">Couldn’t load the building-permit history (${esc(e.message)}). <a href="#" onclick="D.updatePipeline();return false;">Retry</a></p>`;
+        return;
+      }
+      this.busy(false);
+    }
+    if(seq!==this._plSeq || this.dsKey!=='dp' || this.mode!=='detail' || this.val('f-comm')!==comm) return;   // superseded while the history loaded
+    this.renderPipeline(cache);
+  },
+  renderPipeline(cache){
+    const body=document.getElementById('pipeline-body'); if(!body) return;
+    const floor=this._bpFloor||'1999';
+    const elig=(this.rows||[]).filter(d=>d.status==='Released' && d.applied && d.applied.slice(0,4)>=floor);
+    if(!elig.length){ body.innerHTML=`<p class="pl-empty">No released applications since ${floor} match the current filter.</p>`; return; }
+    let fol=0,fol3=0,par=0; const lags=[]; const byCat={};
+    elig.forEach(d=>{
+      const cs=byCat[d.cls]=byCat[d.cls]||{n:0,f3:0}; cs.n++;
+      let first=null;
+      this.plKeys(d).forEach(k=>{
+        const dates=cache.ix[k]; if(!dates) return;
+        for(const t of dates){ if(t>=d.applied){ if(first==null||t<first) first=t; break; } }   // sorted → the first ≥ is that parcel's earliest follow-up
+      });
+      if(first==null) return;
+      fol++;
+      const lag=Math.round((new Date(first)-new Date(d.applied))/864e5);
+      lags.push(lag);
+      if(lag<=1095){ fol3++; cs.f3++; }
+      if(d.decided && first<d.decided) par++;                 // construction application filed while the DP was still undecided
+    });
+    const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
+    let h=`<div class="pl-stat"><b>${pct(fol3,elig.length)}</b> followed by a building permit at the same parcel within 3 years <span class="pl-sub">(${pct(fol,elig.length)} ever)</span></div>`
+      +`<div class="pl-stat">median lag <b>${lags.length?fmtN(median(lags)):'—'} days</b>, application → construction application <span class="pl-sub">(${pct(par,fol)} filed before the decision)</span></div>`
+      +`<div class="pl-stat"><b>${fmtN(fol)}</b> of <b>${fmtN(elig.length)}</b> released applications since ${floor}${cache.capped?' · <span class="pl-warn">building-permit history capped at 30,000 — may undercount</span>':''}</div>`;
+    const cats=Object.entries(byCat).filter(([,c])=>c.n>=20).sort((a,b)=>b[1].n-a[1].n).slice(0,6);   // min-n gate, the choropleth idiom
+    if(cats.length) h+='<div class="pl-cats">'+cats.map(([name,c])=>{
+      const p=Math.round(c.f3/c.n*100);
+      return `<div class="pl-cat"><span class="pl-cat-name" title="${esc(name).replace(/"/g,'&quot;')}">${esc(name)}</span><span class="pl-bar"><i style="width:${p}%"></i></span><span class="pl-cat-pct tnum">${p}%</span></div>`;
+    }).join('')+'</div>';
+    body.innerHTML=h;
+  },
 
   // --- compare communities: a city-view panel that fetches each selected community independently ---
   cmpColor(i){ return COLORS[i%COLORS.length]; },
