@@ -30,7 +30,14 @@ file, no backend, served at the site root.
 - Charts: yearly volume, category mix, work type / permitted-vs-discretionary,
   monthly seasonality, top contractors / top applicants, processing- or
   decision-speed trend, cumulative buildout, cost and days-to-issue/-decision
-  distributions, and a renovation-lifecycle analysis (building permits)
+  distributions, decision outcomes by year (development), and a
+  renovation-lifecycle analysis (building permits)
+- **Application → construction pipeline** (development view, one community
+  drilled) — joins each released development permit to building-permit
+  applications at the same parcel (unit addresses normalized to the parcel,
+  multi-parcel permits expanded): share followed within 3 years and ever,
+  median application→construction lag, share filed before the decision, and
+  per-category conversion bars; one cached cross-dataset request per community
 - Auto-computed insights that recalculate for the current filter (incl. SDAB
   appeal-hearing counts for development permits)
 - Leaflet **community choropleth** shading each community by avg permits/year,

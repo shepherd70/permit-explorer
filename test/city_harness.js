@@ -56,8 +56,8 @@ global.fetch=async(url)=>{
     }
     if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('dcnt'))   // dp compare per-community yearly
       return json([{k:'2018',n:'400',dsum:'20000',dcnt:'390',appr:'350',refn:'10',discn:'240'},{k:'2019',n:'600',dsum:'26000',dcnt:'590',appr:'500',refn:'25',discn:'260'}]);
-    if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('avg(case'))   // dp city yearly (avg days to decision)
-      return json([{k:'1979',n:'67',d:'30'},{k:'2026',n:'9463',d:'55'}]);
+    if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('avg(case'))   // dp city yearly (avg days to decision + decision outcomes)
+      return json([{k:'1979',n:'67',d:'30',appr:'60',refn:'2'},{k:'2026',n:'9463',d:'55',appr:'9000',refn:'300'}]);
     if(grp==='k'&&sel.includes('date_extract_y'))                             // dp init years — 1900 must be floored away by minYear (1979)
       return json([{k:'1900',n:'1'},{k:'1979',n:'67'},{k:'2026',n:'9463'}]);
     if(grp==='k'&&sel.includes('communityname')&&sel.includes('appr'))        // dp city communities (appr/refn → approval-rate shading)
@@ -120,6 +120,16 @@ global.fetch=async(url)=>{
   if(grp==='b'&&sel.includes('case(')) return json([{b:'0',n:'100'},{b:'2',n:'300'},{n:'50'}]);
   if(grp==='k'&&sel.includes('date_extract_m')) return json(Array.from({length:12},(_,i)=>({k:String(i+1),n:String(1000+i)})));
   if(grp==='k'&&sel.includes('contractorname')) return json([{k:'CEDARGLEN GROUP (THE)',n:'5000'}]);
+  if(sel==='originaladdress,applieddate'){   // DP→BP pipeline: one community's full BP address history, crafted for exact join math.
+    // The dp detail stub applies its '298…'/'299…' parcels in 2023/2024 (day 05, decided day 25):
+    return json([
+      {originaladdress:'#2 298 FAKE AV SW', applieddate:'2000-03-15T00:00:00.000'},   // unit-prefixed + predates every DP application → parcel matches, never a follow-up
+      {originaladdress:'298 FAKE AV SW',    applieddate:'2032-01-01T00:00:00.000'},   // far-future follow-up → counts "ever", never "within 3 years"
+      {originaladdress:'#5 299 FAKE AV SW', applieddate:'2024-03-10T00:00:00.000'},   // between the March-2024 cohort's application (03-05) and decision (03-25) → "filed before the decision"
+      {originaladdress:'299 FAKE AV SW',    applieddate:'2024-10-01T00:00:00.000'},   // post-decision follow-up for the June/September 2024 cohorts
+      {originaladdress:'999 NOWHERE PL NW', applieddate:'2015-01-01T00:00:00.000'}    // unmatched-parcel noise
+    ]);
+  }
   if(sel.startsWith('permitnum')&&p['$limit']==='30000')
     return json(Array.from({length:1480},(_,i)=>({permitnum:'BP'+i,statuscurrent:i%10?'Completed':'Cancelled',
       applieddate:`20${10+(i%15)}-0${1+(i%9)}-05T00:00:00.000`,issueddate:`20${10+(i%15)}-0${1+(i%9)}-0${i%37?8:2}T00:00:00.000`,   // every 37th row: issued BEFORE applied (40 bad rows) → must be excluded, not clamped
@@ -439,6 +449,11 @@ eval(src+'\nglobalThis.D=D;');
   check('IS NULL branch reaches the count query (60,000 + 32,471)', D.total===92471, D.total);
   D.initCats(); D.renderCats(); await D.apply(); await new Promise(r=>setTimeout(r,30));
 
+  // dp-only cards in city mode: outcomes chart live, pipeline present but overlay-locked
+  check('dp city: outcomes + pipeline cards shown', el('card-outcomes').style.display==='' && el('card-pipeline').style.display==='', [el('card-outcomes').style.display, el('card-pipeline').style.display]);
+  check('dp city: pipeline card locked without a drilled community', el('card-pipeline').classList._s.has('locked')===true);
+  check('dp city: outcomes chart stacks appr/refn from the yearly query', D.charts.outcomes.data.datasets[0].data.join(',')==='60,9000' && D.charts.outcomes.data.datasets[1].data.join(',')==='2,300', [D.charts.outcomes.data.datasets[0].data, D.charts.outcomes.data.datasets[1].data]);
+
   // dp choropleth metrics
   check('dp shade-by options are ppy/dti/apr', el('choro-metric').options.map(o=>o.value).join(',')==='ppy,dti,apr', el('choro-metric').options.map(o=>o.value));
   check('dp community approval rate = appr ÷ decided (not ÷ n)', Math.abs(D.stats.comms[0].apr-(3600/3750))<1e-9, D.stats.comms[0].apr);
@@ -468,6 +483,42 @@ eval(src+'\nglobalThis.D=D;');
     check('dp search matches land-use district client-side, no request', D.rows.length===2001 && fetchLog.length===dpF, [D.rows.length, fetchLog.length-dpF]);
     el('f-q').value=''; D.onSearch(); }
 
+  // --- application → construction pipeline (task #35): crafted BP history for parcels 298/299 ---
+  const plFetches=()=>fetchLog.filter(u=>u.includes('originaladdress%2Capplieddate')).length;
+  check('pipeline card unlocked in community-drilled detail', el('card-pipeline').classList._s.has('locked')===false);
+  check('pipeline BP history fetched once, from the bp endpoint', plFetches()===1 && fetchLog.some(u=>u.includes('c2es-76ed')&&u.includes('originaladdress%2Capplieddate')), plFetches());
+  check('pipeline floor year derived from the cached bp year list', D._bpFloor==='1999', D._bpFloor);
+  check('plKeys: multi-parcel + unit-prefix + duplicates collapse to parcel keys', (()=>{ const k=D.plKeys({addr:'#110 620 10 AV SW', locs:'620 10 AV SW;620  10 AV SW;#110 620 10 AV SW;1008 17 AV SW'}); return k.size===2 && k.has('620 10 AV SW') && k.has('1008 17 AV SW'); })(), [...D.plKeys({addr:'#110 620 10 AV SW', locs:'620 10 AV SW;620  10 AV SW;#110 620 10 AV SW;1008 17 AV SW'})]);
+  // full drill: 26 of the 3,557 eligible released rows sit on the two crafted parcels (13 ever-only + 13 within-3y)
+  check('pipeline full-drill: 26 of 3,557 followed, 0% within 3y, 1% ever', el('pipeline-body').innerHTML.includes('>26</b> of <b>3,557</b>') && /<b>0%<\/b> followed/.test(el('pipeline-body').innerHTML) && /\(1% ever\)/.test(el('pipeline-body').innerHTML), el('pipeline-body').innerHTML.slice(0,220));
+  check('pipeline full-drill: category bars rendered incl. (uncategorized)', /pl-bar/.test(el('pipeline-body').innerHTML) && /\(uncategorized\)/.test(el('pipeline-body').innerHTML), (el('pipeline-body').innerHTML.match(/pl-cat\b/g)||[]).length);
+  // parcel 298: the only follow-up is 2032 (its 2000 BP predates every application → must never count)
+  el('f-q').value='298 FAKE AV SW'; D.onSearch();
+  { const expMed=Math.round((new Date('2032-01-01')-new Date('2023-05-05'))/864e5);   // 13 lags; median = the May-2023 cohort
+    check('pipeline 298: BP predating the application never counts (0% in 3y, 100% ever)', D.rows.length===13 && /<b>0%<\/b> followed/.test(el('pipeline-body').innerHTML) && /\(100% ever\)/.test(el('pipeline-body').innerHTML), [D.rows.length, el('pipeline-body').innerHTML.slice(0,160)]);
+    check('pipeline 298: median lag = first follow-up ≥ application (2032, not 2000)', el('pipeline-body').innerHTML.includes(`median lag <b>${expMed.toLocaleString()} days`), [expMed, el('pipeline-body').innerHTML.match(/median lag <b>[^<]*/)]);
+    check('pipeline 298: none filed before the decision', el('pipeline-body').innerHTML.includes('(0% filed before the decision)'));
+    check('pipeline: no category bars under the min-n gate (13 rows)', !/pl-cats/.test(el('pipeline-body').innerHTML)); }
+  // parcel 299: unit-prefixed BP lands 5 days in (before the March decisions), a second one in October
+  el('f-q').value='299 FAKE AV SW'; D.onSearch();
+  check('pipeline 299: all followed within 3 years', D.rows.length===13 && /<b>100%<\/b> followed/.test(el('pipeline-body').innerHTML), [D.rows.length, el('pipeline-body').innerHTML.slice(0,140)]);
+  check('pipeline 299: median lag 26 days (5×5d, 4×26d, 4×118d)', el('pipeline-body').innerHTML.includes('median lag <b>26 days'), el('pipeline-body').innerHTML.match(/median lag <b>[^<]*/));
+  check('pipeline 299: 38% filed before the decision (5 of 13, via the unit-prefixed BP)', el('pipeline-body').innerHTML.includes('(38% filed before the decision)'), el('pipeline-body').innerHTML.match(/\([^)]*decision\)/));
+  check('pipeline search recompute issued no new BP fetch', plFetches()===1, plFetches());
+  el('f-q').value=''; D.onSearch();
+  // population rules, exercised directly on synthetic rows against the cached index
+  { const saved=D.rows;
+    D.rows=[
+      {status:'Released', applied:'1997-05-05', addr:'298 FAKE AV SW', cls:'Legacy', decided:'1997-06-01'},   // pre-BP-era → excluded
+      {status:'Released', applied:'2023-02-05', addr:'298 FAKE AV SW', cls:'Modern', decided:'2023-02-25'},
+      {status:'Cancelled', applied:'2023-02-05', addr:'298 FAKE AV SW', cls:'Modern', decided:'2023-02-25'}   // not released → excluded
+    ];
+    D.renderPipeline(D._bpCache['BELTLINE']);
+    check('pipeline population: pre-1999 and non-released rows excluded', el('pipeline-body').innerHTML.includes('of <b>1</b> released applications since 1999'), el('pipeline-body').innerHTML.slice(0,240));
+    D.rows=saved; D.renderPipeline(D._bpCache['BELTLINE']); }
+  // detail-mode outcomes chart is derived from the loaded rows
+  check('dp detail: outcomes chart sums to the row-level decisions (3,557 + 445)', D.charts.outcomes.data.datasets[0].data.reduce((a,b)=>a+b,0)===3557 && D.charts.outcomes.data.datasets[1].data.reduce((a,b)=>a+b,0)===445, [D.charts.outcomes.data.datasets[0].data.reduce((a,b)=>a+b,0), D.charts.outcomes.data.datasets[1].data.reduce((a,b)=>a+b,0)]);
+
   // dp compare metrics
   el('f-comm').value=''; await D.apply(); await new Promise(r=>setTimeout(r,30));
   D.cmpSel=['BELTLINE','HARVEST HILLS']; D.renderCmpChips(); await D.cmpRun();
@@ -485,6 +536,7 @@ eval(src+'\nglobalThis.D=D;');
   check('bp URL drops ds and stale dp params', global.location._last==='/', global.location._last);
   check('bp status filter reset on the way back', el('f-status').value==='all', el('f-status').value);
   check('bp charts rebuilt with the cost line + units axis', D.charts.year.data.datasets.length===2 && D.charts.cum.data.datasets.length===2, [D.charts.year.data.datasets.length, D.charts.cum.data.datasets.length]);
+  check('bp hides the dp-only cards and builds no outcomes chart', el('card-outcomes').style.display==='none' && el('card-pipeline').style.display==='none' && !D.charts.outcomes, [el('card-outcomes').style.display, el('card-pipeline').style.display, !!D.charts.outcomes]);
   check('bp categories restored (all checked)', D.cats.length===2 && D.activeCats.size===2, D.cats&&D.cats.length);
   check('bp shade-by options restored', el('choro-metric').options.map(o=>o.value).join(',')==='ppy,cost,dti,comp', el('choro-metric').options.map(o=>o.value));
   await D.setDataset('dp'); await new Promise(r=>setTimeout(r,30));
