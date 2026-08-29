@@ -500,7 +500,6 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 </footer>
 
 <script>
-const API = 'https://data.calgary.ca/resource/c2es-76ed.json';
 const DETAIL_THRESHOLD = 30000;
 const C = {blue:'#0072B2',amber:'#E69F00',green:'#009E73',red:'#D55E00',pink:'#CC79A7',sky:'#56B4E9',purple:'#6A4C93',gray:'#8C8C8C'};
 const COLORS = [C.blue,C.amber,C.green,C.red,C.pink,C.sky,C.purple,C.gray,'#117733','#88CCEE'];
@@ -538,7 +537,7 @@ const isAbort = e => !!e && (e.name==='AbortError' || e.code===20);
 
 async function soql(params,signal){
   const qs = Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
-  const r = await fetch(`${API}?${qs}`, signal?{signal}:undefined);
+  const r = await fetch(`${D.ds.api}?${qs}`, signal?{signal}:undefined);
   if(!r.ok){
     let body=''; try{ body=(await r.text()).slice(0,500); }catch(e){}
     if(r.status===429) throw new Error(`Calgary's open-data service is rate-limiting requests (HTTP 429). Please wait a few seconds and try again.`);
@@ -559,6 +558,144 @@ function binsFromGroups(rows,bins){
   return out;
 }
 
+// --- dataset registry --------------------------------------------------------
+// Every endpoint, field name, SoQL fragment, column list and per-dataset
+// rendering rule lives here; `D.ds` points at the active entry, so the rest of
+// the app never names a dataset-specific field directly. Key-order contract:
+// `api:` precedes `fields:` precedes `head:` in each entry — test/smoke.js
+// extracts those three per dataset to drive the live checks.
+const DATASETS={
+bp:{
+  label:'Building',
+  api:'https://data.calgary.ca/resource/c2es-76ed.json',
+  fields:'permitnum,statuscurrent,applieddate,issueddate,permittype,permitclass,permitclassgroup,workclass,description,contractorname,housingunits,estprojectcost,originaladdress,communityname,latitude,longitude',
+  head:"count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn, sum(case(workclass='New',1,true,0)) as newn",
+  minYear:1980, hasCost:true, hasUnits:true, renov:true,
+  cat:{field:'permitclassgroup', nullable:false, nullLabel:'Unspecified'},
+  sec:{field:'workclass', all:'All work'},
+  entity:{field:'contractorname'},
+  resolved:'issueddate', dtiExpr:'date_diff_d(issueddate,applieddate)', dtiBins:DTI_BINS,
+  dtiWord:'issue', speedNoun:'applied→issued',
+  csvName:'calgary-permits',
+  searchPh:'address, contractor, keyword…',
+  mapDetailHint:'— individual permits, coloured by permit class; click a point for details',
+  initComms:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c',
+  cityYr:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d',
+  cityComms:"communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, count(estprojectcost) as costn, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn",
+  headRow(h){ return {n:+h.n||0, c:+h.c||0, u:+h.u||0, d:h.d==null?null:+h.d, avgc:h.avgc==null?null:+h.avgc, costn:+h.costn||0, newn:+h.newn||0}; },
+  commRow(r,yspan){ const n=+r.n,done=+r.done||0,openn=+r.openn||0,sn=+r.sn||0,resolved=sn-openn; return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,costn:+r.costn||0,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan}; },
+  mapRow(r){ return {
+    id:r.permitnum, status:r.statuscurrent||'Unknown',
+    applied:r.applieddate?r.applieddate.slice(0,10):null,
+    year:r.applieddate?+r.applieddate.slice(0,4):null,
+    month:r.applieddate?+r.applieddate.slice(5,7)-1:null,
+    dti:(r.applieddate&&r.issueddate)?(dd=>dd>=0?dd:null)(Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,   // negative = data error → excluded, matching the server-side case() guard
+    type:r.permittype, cls:r.permitclassgroup||'Unspecified', clsDetail:r.permitclass,
+    work:r.workclass||'Unspecified', desc:r.description,
+    contractor:r.contractorname, units:+r.housingunits||0,
+    cost:r.estprojectcost==null?null:+r.estprojectcost,
+    addr:r.originaladdress, community:r.communityname,
+    lat:r.latitude==null?null:+r.latitude, lng:r.longitude==null?null:+r.longitude
+  }; },
+  headFromRows(f){ return {n:f.length, c:f.reduce((s,d)=>s+(d.cost||0),0), u:f.reduce((s,d)=>s+d.units,0), d:median(f.map(d=>d.dti).filter(v=>v!=null))}; },
+  mapTableRow(r){ return {id:r.permitnum,status:r.statuscurrent||'Unknown',applied:r.applieddate?r.applieddate.slice(0,10):null,
+    community:r.communityname,cls:r.permitclassgroup||'—',work:r.workclass||'—',cost:r.estprojectcost==null?null:+r.estprojectcost,
+    contractor:r.contractorname,addr:r.originaladdress,desc:r.description}; },
+  popup(d){ return `<b>${esc(d.id)}</b> · ${esc(d.status)}<br>${esc(d.addr)} · ${esc(d.community)}<br>${esc(d.cls)} — ${esc(d.work)}<br>${esc((d.desc||'').slice(0,120))}<br><b>${fmt$(d.cost)}</b>${d.contractor?' · '+esc(d.contractor):''}<br>Applied ${d.applied||'—'}`; },
+  kpis(D,s,detail){
+    const h=s.head;
+    document.getElementById('k-count').textContent=fmtN(h.n);
+    document.getElementById('k-cost').textContent=fmt$(h.c);
+    document.getElementById('k-cost-n').textContent = detail||!h.costn ? 'estimated project cost' : `estimates on file for ${fmtN(h.costn)} of ${fmtN(h.n)} permits`;
+    document.getElementById('k-units').textContent=fmtN(h.u);
+    if(detail){
+      const costs=D.rows.map(d=>d.cost).filter(v=>v!=null);
+      document.getElementById('k-med-l').textContent='Median project cost';
+      document.getElementById('k-med').textContent=fmt$(median(costs));
+      document.getElementById('k-med-n').textContent=costs.length?`max ${fmt$(Math.max(...costs))}`:'';
+      document.getElementById('k-dti-l').textContent='Median days to issue';
+      document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
+      const newPct=D.rows.length?D.rows.filter(d=>d.work==='New').length/D.rows.length*100:0;
+      document.getElementById('k-count-n').textContent=`${newPct.toFixed(0)}% new construction`;
+      document.getElementById('k-dti-n').textContent='';
+    }else{
+      document.getElementById('k-med-l').textContent='Avg project cost';
+      document.getElementById('k-med').textContent=fmt$(h.avgc);
+      document.getElementById('k-med-n').textContent='median needs detail view';
+      document.getElementById('k-dti-l').textContent='Avg days to issue';
+      document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
+      document.getElementById('k-dti-n').textContent='';
+      document.getElementById('k-count-n').textContent=h.n?`${(h.newn/h.n*100).toFixed(0)}% new construction`:'';   // dedicated aggregate — independent of the top-8 work-class truncation
+    }
+    const done=(s.status.find(x=>x[0]==='Completed')||[null,0])[1];
+    const open=['In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'];
+    const resolved=s.status.filter(x=>!open.includes(x[0])).reduce((a,x)=>a+x[1],0);
+    document.getElementById('k-comp').textContent=resolved?`${(done/resolved*100).toFixed(0)}%`:'—';
+    document.getElementById('k-comp-n').textContent=`${fmtN(done)} completed`;
+  },
+  insights(D,s,out){
+    if(s.yr.length>1){
+      const by=[...s.yr].sort((a,b)=>b.n-a.n)[0];
+      out.push(`Busiest year: <b>${by.k}</b> with <b>${fmtN(by.n)}</b> permit applications.`);
+      const bc=[...s.yr].sort((a,b)=>b.c-a.c)[0];
+      out.push(`Peak construction value: <b>${bc.k}</b> at <b>${fmt$(bc.c)}</b>.`);
+    }
+    if(s.contr.length)out.push(`Most active contractor: <b>${esc(s.contr[0][0])}</b> with <b>${fmtN(s.contr[0][1])}</b> permits.`);
+    const mMax=s.month.indexOf(Math.max(...s.month));
+    out.push(`Seasonal pattern: applications peak in <b>${MONTHS[mMax]}</b> (${fmtN(s.month[mMax])}).`);
+    if(D.mode==='city'&&s.comms.length>1)out.push(`Most active community in scope: <b>${esc(s.comms[0].name)}</b> with <b>${fmtN(s.comms[0].n)}</b> permits (${fmt$(s.comms[0].cost)}).`);
+    const canc=(s.status.find(x=>x[0]==='Cancelled')||[null,0])[1];
+    if(canc)out.push(`<b>${fmtN(canc)}</b> permits (${(canc/s.head.n*100).toFixed(1)}%) were cancelled.`);
+    if(D.mode==='detail'){
+      const big=D.rows.filter(d=>d.cost!=null).sort((a,b)=>b.cost-a.cost)[0];
+      if(big)out.push(`Largest project: <b>${fmt$(big.cost)}</b> — ${esc((big.desc||big.cls).slice(0,80))} (${esc(big.id)}, ${big.year}).`);
+      if(D.renovLags.length>5)out.push(`Renovation lifecycle: <b>${D.renovLags.length}</b> buildings renovated after a new build — median <b>${median(D.renovLags).toFixed(1)} years</b> later.`);
+      const costs=D.rows.map(d=>d.cost).filter(v=>v!=null).sort((a,b)=>b-a);
+      if(costs.length>20){
+        const tot=costs.reduce((a,b)=>a+b,0),n10=Math.ceil(costs.length*.1);
+        out.push(`Cost concentration: the top <b>10%</b> of projects account for <b>${(costs.slice(0,n10).reduce((a,b)=>a+b,0)/tot*100).toFixed(0)}%</b> of estimated value.`);
+      }
+    }else{
+      out.push(`Filter down to under <b>${fmtN(DETAIL_THRESHOLD)}</b> permits (a community, or a single year city-wide) to unlock median KPIs, renovation lifecycle, and the permit-point map.`);
+    }
+  },
+  cmpSelect:"date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as dsum, sum(case(date_diff_d(issueddate,applieddate)>=0,1,true,0)) as dcnt, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in ('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn",
+  cmpAgg(res,span){
+    const rows=(res||[]).filter(r=>+r.k>=this.minYear).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,cn:+r.cn||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,sn:+r.sn||0,done:+r.done||0,openn:+r.openn||0}));
+    const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,cn:a.cn+r.cn,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,sn:a.sn+r.sn,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,cn:0,u:0,dsum:0,dcnt:0,sn:0,done:0,openn:0});
+    return { yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.cn?t.c/t.cn:null, dti:t.dcnt?t.dsum/t.dcnt:null,
+      comp:(t.sn-t.openn)>0?t.done/(t.sn-t.openn):null, ppy:t.n/span };   // resolved = non-null statuses − open, same rule as the KPI/choropleth
+  },
+  cmpMetrics:[
+    {l:'Permits',            f:d=>d.n,       fmt:fmtN,                                     best:'max'},
+    {l:'Total est. cost',    f:d=>d.c,       fmt:fmt$,                                     best:'max'},
+    {l:'Avg cost / permit',  f:d=>d.avgCost, fmt:fmt$,                                     best:'max'},
+    {l:'Avg days to issue',  f:d=>d.dti,     fmt:v=>v==null?'—':Math.round(v)+' d',        best:'min'},
+    {l:'Completion rate',    f:d=>d.comp,    fmt:v=>v==null?'—':Math.round(v*100)+'%',     best:'max'},
+    {l:'Housing units',      f:d=>d.u,       fmt:fmtN,                                     best:'max'},
+    {l:'Avg permits / year', f:d=>d.ppy,     fmt:v=>v==null?'—':(v>=10?Math.round(v).toLocaleString():v.toFixed(1)), best:'max'}
+  ],
+  cols:[
+    {f:'permitnum',df:'id',l:'Permit #',r:d=>`<td style="white-space:nowrap">${esc(d.id)}</td>`},
+    {f:'applieddate',df:'applied',l:'Applied',r:d=>`<td style="white-space:nowrap">${d.applied||'—'}</td>`},
+    {f:'statuscurrent',df:'status',l:'Status',r:d=>{const stc=STATUS_COLORS[d.status]||['#eceff1','#546e7a'];return `<td><span class="pill" style="background:${stc[0]};color:${stc[1]}">${esc(d.status)}</span></td>`;}},
+    {f:'communityname',df:'community',l:'Community',r:d=>`<td>${esc(d.community)||'—'}</td>`},
+    {f:'permitclassgroup',df:'cls',l:'Class',r:d=>`<td>${esc(d.cls)}</td>`},
+    {f:'workclass',df:'work',l:'Work',r:d=>`<td>${esc(d.work)}</td>`},
+    {f:'estprojectcost',df:'cost',l:'Est. Cost',num:1,r:d=>`<td class="num">${fmt$(d.cost)}</td>`},
+    {f:'contractorname',df:'contractor',l:'Contractor',r:d=>`<td>${esc(d.contractor)||'—'}</td>`},
+    {f:'originaladdress',df:'addr',l:'Address',r:d=>`<td>${esc(d.addr)||'—'}</td>`},
+    {f:'description',df:'desc',l:'Description',r:d=>`<td class="desc-cell">${d.desc?esc(d.desc.length>110?d.desc.slice(0,108)+'…':d.desc):'—'}</td>`}
+  ],
+  choroMetrics:{
+    ppy: {label:'Avg permits / year', short:'avg permits per year', log:true,  minN:1, get:c=>c.ppy,           fmt:v=>`${v>=10?Math.round(v).toLocaleString():v.toFixed(1)}/yr`},
+    cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.avgc, count:c=>c.costn, fmt:v=>fmt$(v)},   // gate on cost-bearing permits (costn), since avgc averages only those
+    dti: {label:'Avg days to issue', short:'avg days to issue', log:false, minN:5, get:c=>c.dti,             fmt:v=>`${Math.round(v)} d`},
+    comp:{label:'Completion rate',   short:'completion rate',   log:false, minN:5, get:c=>c.comp,            fmt:v=>`${Math.round(v*100)}%`}
+  }
+}
+};
+
 // --- community choropleth: boundary source, colour ramp, shading metrics ---
 const BOUNDARIES_URL = 'https://data.calgary.ca/resource/surr-xmvs.geojson?$limit=500';
 const CIVIDIS = [[0,34,78],[0,51,106],[44,67,95],[76,83,97],[106,100,98],[137,118,93],[172,139,82],[210,161,61],[255,233,69]];
@@ -568,17 +705,13 @@ function rampColor(t){ // cividis: perceptually uniform, colour-blind- and greys
   const x=t*(CIVIDIS.length-1), i=Math.floor(x), f=x-i, a=CIVIDIS[i], b=CIVIDIS[Math.min(i+1,CIVIDIS.length-1)];
   return `rgb(${Math.round(a[0]+(b[0]-a[0])*f)},${Math.round(a[1]+(b[1]-a[1])*f)},${Math.round(a[2]+(b[2]-a[2])*f)})`;
 }
-// map shading metrics, all derived from the city community query (no extra requests).
-// `ppy` (avg permits/year) is the volume metric that replaced the old count bubbles.
-const CHORO_METRICS = {
-  ppy: {label:'Avg permits / year', short:'avg permits per year', log:true,  minN:1, get:c=>c.ppy,           fmt:v=>`${v>=10?Math.round(v).toLocaleString():v.toFixed(1)}/yr`},
-  cost:{label:'Avg project cost',  short:'avg project cost',  log:true,  minN:3, get:c=>c.avgc, count:c=>c.costn, fmt:v=>fmt$(v)},   // gate on cost-bearing permits (costn), since avgc averages only those
-  dti: {label:'Avg days to issue', short:'avg days to issue', log:false, minN:5, get:c=>c.dti,             fmt:v=>`${Math.round(v)} d`},
-  comp:{label:'Completion rate',   short:'completion rate',   log:false, minN:5, get:c=>c.comp,            fmt:v=>`${Math.round(v*100)}%`}
-};
+// map shading metrics live per dataset in DATASETS.<ds>.choroMetrics — all derived
+// from the city community query (no extra requests); `ppy` (avg permits/year) is
+// the volume metric that replaced the old count bubbles.
 const NODATA_FILL='#d7dde3', NODATA_FILL_DARK='#2b3440';
 
 const D = {
+  dsKey:'bp', ds:DATASETS.bp,                  // the active dataset config (see the DATASETS registry)
   mode:'city', pageNum:0, pageSize:25, total:0,
   sortCol:'applieddate', sortDir:'desc',
   stats:null, rows:null, allRows:null, renovLags:[], communities:[], cats:null, activeCats:null,
@@ -592,22 +725,29 @@ const D = {
   clearError(){ document.getElementById('err').classList.remove('show'); },
   val(id){const v=document.getElementById(id).value;return v==='all'||v===''?null:v;},
 
+  // permit-category multi-select → SoQL clause (null when no clause is needed).
+  // A dataset whose category is nullable exposes a synthetic "(uncategorized)"
+  // entry (isNull) that maps to an IS NULL branch instead of an IN member.
+  catClause(){
+    if(!this.cats || !this.activeCats) return null;
+    const f=this.ds.cat.field;
+    const n=this.activeCats.size, total=this.cats.length;
+    if(n===0) return `${f} IN ('')`;                               // defensive: match nothing (apply() also short-circuits)
+    if(n===total) return null;                                     // all shown → omit the clause entirely
+    const act=this.cats.filter(c=>this.activeCats.has(c.name));
+    const real=act.filter(c=>!c.isNull), wantNull=act.length>real.length;
+    if(!real.length) return `${f} IS NULL`;                        // only "(uncategorized)" is checked
+    const inList=real.map(c=>`'${sq(c.name)}'`).join(',');
+    return wantNull ? `(${f} IN (${inList}) OR ${f} IS NULL)` : `${f} IN (${inList})`;
+  },
   where(){
     const w=[];
     const y1=this.val('f-y1'), y2=this.val('f-y2');
     if(y1) w.push(`applieddate >= '${y1}-01-01T00:00:00'`);
     if(y2) w.push(`applieddate <= '${y2}-12-31T23:59:59'`);
     const comm=this.val('f-comm'); if(comm) w.push(`upper(communityname) = '${sq(comm.toUpperCase())}'`);
-    // permit category (permitclassgroup) multi-select — replaces the old single-class dropdown
-    if(this.cats && this.activeCats){
-      const n=this.activeCats.size, total=this.cats.length;
-      if(n===0) w.push("permitclassgroup IN ('')");               // defensive: match nothing (apply() also short-circuits)
-      else if(n<total){
-        const inList=this.cats.filter(c=>this.activeCats.has(c.name)).map(c=>`'${sq(c.name)}'`).join(',');
-        w.push(`permitclassgroup IN (${inList})`);
-      }                                                            // n===total → all shown → omit the clause entirely
-    }
-    const work=this.val('f-work'); if(work) w.push(`workclass = '${sq(work)}'`);
+    const cc=this.catClause(); if(cc) w.push(cc);                  // category multi-select — replaces the old single-class dropdown
+    const work=this.val('f-work'); if(work) w.push(`${this.ds.sec.field} = '${sq(work)}'`);
     const st=this.val('f-status'); if(st) w.push(`statuscurrent = '${sq(st)}'`);
     return w.join(' AND ');
   },
@@ -621,34 +761,54 @@ const D = {
     }
     this.buildCharts(); this.buildMap(); this.ensureBoundaries();   // preload boundaries — the city map is always a choropleth now
     const tb=document.getElementById('theme-toggle'); if(tb&&tb.setAttribute) tb.setAttribute('aria-pressed', isDark()?'true':'false');
-    this.busy(true);
-    try{
-      const [years, comms, classes, works, statuses] = await Promise.all([
-        soql({select:'date_extract_y(applieddate) as k, count(1) as n', group:'k', order:'k'}),
-        soql({select:'communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c', where:'communityname IS NOT NULL', group:'k', order:'n DESC', limit:'500'}),
-        soql({select:'permitclassgroup as k, count(1) as n', where:'permitclassgroup IS NOT NULL', group:'k', order:'n DESC'}),
-        soql({select:'workclass as k, count(1) as n', where:'workclass IS NOT NULL', group:'k', order:'n DESC'}),
-        soql({select:'statuscurrent as k, count(1) as n', where:'statuscurrent IS NOT NULL', group:'k', order:'n DESC'})
-      ]);
-      const ys = years.map(r=>+r.k).filter(y=>y>=1980&&y<=2100).sort((a,b)=>a-b);
-      const y1=document.getElementById('f-y1'), y2=document.getElementById('f-y2');
-      ys.forEach(y=>{y1.add(new Option(y,y));y2.add(new Option(y,y));});
-      y1.value=ys[0]; y2.value=ys[ys.length-1];
-      this.communities = comms.map(r=>({name:r.k, n:+r.n, lat:+r.lat, lng:+r.lng, cost:+r.c||0}));
-      const sortedComms=[...this.communities].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
-      const cs=document.getElementById('f-comm');                  // populate the community dropdown A→Z (after the "All communities" option)
-      sortedComms.forEach(c=>cs.add(new Option(c.name,c.name)));
-      const ca=document.getElementById('cmp-add');                 // same list feeds the "compare communities" picker
-      if(ca&&ca.add) sortedComms.forEach(c=>ca.add(new Option(c.name,c.name)));
-      const fill=(id,list)=>{const sel=document.getElementById(id);list.forEach(r=>sel.add(new Option(`${r.k} (${(+r.n).toLocaleString()})`,r.k)));};
-      fill('f-work',works); fill('f-status',statuses);
-      this.cats = classes.map(r=>({name:r.k, n:+r.n}));   // distinct permitclassgroup values → category checkboxes
-      this.initCats(); this.renderCats();
-      document.getElementById('last-updated').textContent=new Date().toLocaleString();
-    }catch(e){ this.error(e.message); }
-    this.busy(false);
+    await this.loadOptions();
     this.readURL();
     this.apply();
+  },
+
+  // Fetch (once per dataset — cached for toggling back) the data-driven option
+  // lists, then rebuild every dropdown from them, keeping the year range and
+  // community selection where they remain valid in the new dataset.
+  async loadOptions(){
+    const ds=this.ds;
+    if(!this._dsCache) this._dsCache={};
+    let lists=this._dsCache[this.dsKey];
+    if(!lists){
+      this.busy(true);
+      try{
+        const [years, comms, classes, works, statuses] = await Promise.all([
+          soql({select:'date_extract_y(applieddate) as k, count(1) as n', group:'k', order:'k'}),
+          soql({select:ds.initComms, where:'communityname IS NOT NULL', group:'k', order:'n DESC', limit:'500'}),
+          soql({select:`${ds.cat.field} as k, count(1) as n`, ...(ds.cat.nullable?{}:{where:`${ds.cat.field} IS NOT NULL`}), group:'k', order:'n DESC'}),
+          soql({select:`${ds.sec.field} as k, count(1) as n`, where:`${ds.sec.field} IS NOT NULL`, group:'k', order:'n DESC'}),
+          soql({select:'statuscurrent as k, count(1) as n', where:'statuscurrent IS NOT NULL', group:'k', order:'n DESC'})
+        ]);
+        lists=this._dsCache[this.dsKey]={years,comms,classes,works,statuses};
+      }catch(e){ this.error(e.message); }
+      this.busy(false);
+      if(!lists) return;                                           // init fetch failed — leave the dropdowns as they are
+    }
+    const prevY1=document.getElementById('f-y1').value, prevY2=document.getElementById('f-y2').value, prevComm=document.getElementById('f-comm').value;
+    const ys = lists.years.map(r=>+r.k).filter(y=>y>=ds.minYear&&y<=2100).sort((a,b)=>a-b);
+    const y1=document.getElementById('f-y1'), y2=document.getElementById('f-y2');
+    y1.options.length=0; y2.options.length=0;
+    ys.forEach(y=>{y1.add(new Option(y,y));y2.add(new Option(y,y));});
+    y1.value=ys.includes(+prevY1)?prevY1:ys[0]; y2.value=ys.includes(+prevY2)?prevY2:ys[ys.length-1];
+    this.communities = lists.comms.map(r=>({name:r.k, n:+r.n, lat:+r.lat, lng:+r.lng, cost:+r.c||0}));
+    const sortedComms=[...this.communities].sort((a,b)=>a.name<b.name?-1:a.name>b.name?1:0);
+    const cs=document.getElementById('f-comm');                    // rebuild the community dropdown A→Z (after the "All communities" option)
+    cs.options.length=0; cs.add(new Option('All communities',''));
+    sortedComms.forEach(c=>cs.add(new Option(c.name,c.name)));
+    cs.value=this.communities.some(c=>c.name===prevComm)?prevComm:'';
+    const ca=document.getElementById('cmp-add');                   // same list feeds the "compare communities" picker
+    if(ca&&ca.add){ if(ca.options) ca.options.length=0; ca.add(new Option('Add a community…','')); sortedComms.forEach(c=>ca.add(new Option(c.name,c.name))); ca.value=''; }
+    const fill=(id,list,allLabel)=>{const sel=document.getElementById(id); sel.options.length=0; sel.add(new Option(allLabel,'all')); list.forEach(r=>sel.add(new Option(`${r.k} (${(+r.n).toLocaleString()})`,r.k))); sel.value='all';};
+    fill('f-work',lists.works,ds.sec.all); fill('f-status',lists.statuses,'All statuses');
+    this.cats = lists.classes.map(r=>(r.k==null ? {name:ds.cat.nullLabel, n:+r.n, isNull:true} : {name:r.k, n:+r.n}));   // distinct category values → checkboxes; the null group becomes "(uncategorized)"
+    this.initCats(); this.renderCats();
+    const msel=document.getElementById('choro-metric');            // shade-by options are per dataset
+    if(msel&&msel.add){ if(msel.options) msel.options.length=0; Object.entries(ds.choroMetrics).forEach(([k,m])=>msel.add(new Option(m.label,k))); msel.value=this.choroMetric; }
+    document.getElementById('last-updated').textContent=new Date().toLocaleString();
   },
 
   reset(){
@@ -723,7 +883,7 @@ const D = {
       }
       this.renderCats();
     }
-    const m=p.get('metric'); if(m && CHORO_METRICS[m]) this.choroMetric=m;   // (legacy ?map=areas links are ignored — the map is always a choropleth)
+    const m=p.get('metric'); if(m && this.ds.choroMetrics[m]) this.choroMetric=m;   // per-dataset metric keys; unknown/legacy params (e.g. ?map=areas, or bp-only ?metric=cost under ds=dp) are ignored
     const msel=document.getElementById('choro-metric'); if(msel) msel.value=this.choroMetric;
     if(p.has('cmp')){                                              // only accept known community names from the URL (untrusted input)
       const known=(this.communities&&this.communities.length)?new Set(this.communities.map(c=>String(c.name).toUpperCase())):null;
@@ -775,7 +935,7 @@ const D = {
     this.busy(true);
     try{
       const where=this.where(), q=this.qParam();
-      const head = await soql({select:`count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, avg(estprojectcost) as avgc, count(estprojectcost) as costn, sum(case(workclass='New',1,true,0)) as newn`, ...(where?{where}:{}) , ...q}, signal);
+      const head = await soql({select:this.ds.head, ...(where?{where}:{}) , ...q}, signal);
       if(seq!==this._seq) return;                 // a newer filter change superseded this one
       this.total = +head[0].n||0;
       if(this.total<=DETAIL_THRESHOLD && this.total>0) await this.enterDetail(where,q,head[0],seq,signal);
@@ -788,29 +948,30 @@ const D = {
   },
 
   async enterCity(where,q,head,seq,signal){
+    const ds=this.ds;
     const W = w => { const conds=[w,where].filter(Boolean).join(' AND '); return conds?{where:conds}:{}; };
     const [yr, cls, work, month, contr, status, comms, costh, dtih] = await Promise.all([
-      soql({select:'date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, sum(housingunits) as u, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
-      soql({select:'permitclassgroup as k, count(1) as n', group:'k', order:'n DESC', limit:'9', ...W('permitclassgroup IS NOT NULL'), ...q}, signal),
-      soql({select:'workclass as k, count(1) as n', group:'k', order:'n DESC', limit:'8', ...W('workclass IS NOT NULL'), ...q}, signal),
+      soql({select:ds.cityYr, group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
+      soql({select:`${ds.cat.field} as k, count(1) as n`, group:'k', order:'n DESC', limit:'9', ...W(`${ds.cat.field} IS NOT NULL`), ...q}, signal),
+      soql({select:`${ds.sec.field} as k, count(1) as n`, group:'k', order:'n DESC', limit:'8', ...W(`${ds.sec.field} IS NOT NULL`), ...q}, signal),
       soql({select:'date_extract_m(applieddate) as k, count(1) as n', group:'k', order:'k', ...(where?{where}:{}), ...q}, signal),
-      soql({select:'contractorname as k, count(1) as n', group:'k', order:'n DESC', limit:'10', ...W('contractorname IS NOT NULL'), ...q}, signal),
+      soql({select:`${ds.entity.field} as k, count(1) as n`, group:'k', order:'n DESC', limit:'10', ...W(`${ds.entity.field} IS NOT NULL`), ...q}, signal),
       soql({select:'statuscurrent as k, count(1) as n', group:'k', order:'n DESC', ...W('statuscurrent IS NOT NULL'), ...q}, signal),
-      soql({select:`communityname as k, count(1) as n, avg(latitude) as lat, avg(longitude) as lng, sum(estprojectcost) as c, avg(estprojectcost) as avgc, count(estprojectcost) as costn, avg(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as d, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(statuscurrent in('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'),1,true,0)) as openn`, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
-      soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }),
-      soql({select:`${caseBins('date_diff_d(issueddate,applieddate)',DTI_BINS)} as b, count(1) as n`, group:'b', ...W('issueddate IS NOT NULL AND date_diff_d(issueddate,applieddate)>=0'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
+      soql({select:ds.cityComms, group:'k', order:'n DESC', limit:'500', ...W('communityname IS NOT NULL'), ...q}, signal),
+      ds.hasCost ? soql({select:`${caseBins('estprojectcost',COST_BINS)} as b, count(1) as n`, group:'b', ...W('estprojectcost IS NOT NULL'), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; }) : null,
+      soql({select:`${caseBins(ds.dtiExpr,ds.dtiBins)} as b, count(1) as n`, group:'b', ...W(`${ds.resolved} IS NOT NULL AND ${ds.dtiExpr}>=0`), ...q}, signal).catch(e=>{ if(isAbort(e)) throw e; return null; })
     ]);
     if(seq!=null && seq!==this._seq) return;       // superseded while loading
     this.mode='city'; this.rows=null; this.renovLags=[];
     const yspan=Math.max(1,(+this.val('f-y2')||0)-(+this.val('f-y1')||0)+1);   // selected year-range span → avg permits/year
     this.stats = {
-      yr: yr.filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d})),
+      yr: yr.filter(r=>+r.k>=ds.minYear).map(r=>({k:+r.k,n:+r.n,c:+r.c||0,u:+r.u||0,d:r.d==null?null:+r.d})),
       cls: cls.map(r=>[r.k,+r.n]), work: work.map(r=>[r.k,+r.n]),
       month: (()=>{const m=Array(12).fill(0);month.forEach(r=>{const i=+r.k-1;if(i>=0&&i<12)m[i]=+r.n;});return m;})(),
       contr: contr.map(r=>[r.k,+r.n]), status: status.map(r=>[r.k,+r.n]),
-      comms: comms.map(r=>{const n=+r.n,done=+r.done||0,openn=+r.openn||0,sn=+r.sn||0,resolved=sn-openn;return {name:r.k,n,lat:+r.lat,lng:+r.lng,cost:+r.c||0,avgc:r.avgc==null?null:+r.avgc,costn:+r.costn||0,dti:r.d==null?null:+r.d,comp:resolved>0?done/resolved:null,ppy:n/yspan};}),
-      costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,DTI_BINS),
-      head: {n:+head.n||0, c:+head.c||0, u:+head.u||0, d:head.d==null?null:+head.d, avgc:head.avgc==null?null:+head.avgc, costn:+head.costn||0, newn:+head.newn||0}
+      comms: comms.map(r=>ds.commRow(r,yspan)),
+      costh: binsFromGroups(costh,COST_BINS), dtih: binsFromGroups(dtih,ds.dtiBins),
+      head: ds.headRow(head)
     };
     this.render();
     if(this.cmpSel && this.cmpSel.length) this.cmpRun();   // keep the compare panel in sync with the current filters
@@ -818,23 +979,10 @@ const D = {
   },
 
   async enterDetail(where,q,head,seq,signal){
-    const fields='permitnum,statuscurrent,applieddate,issueddate,permittype,permitclass,permitclassgroup,workclass,description,contractorname,housingunits,estprojectcost,originaladdress,communityname,latitude,longitude';
-    const raw = await soql({select:fields, limit:String(DETAIL_THRESHOLD), order:'applieddate DESC', ...(where?{where}:{}), ...this.qParam()}, signal);
+    const raw = await soql({select:this.ds.fields, limit:String(DETAIL_THRESHOLD), order:'applieddate DESC', ...(where?{where}:{}), ...this.qParam()}, signal);
     if(seq!=null && seq!==this._seq) return;       // superseded while loading
     this.mode='detail';
-    this.allRows = raw.map(r=>({                    // full scope (year/community/category); search filters this CLIENT-SIDE
-      id:r.permitnum, status:r.statuscurrent||'Unknown',
-      applied:r.applieddate?r.applieddate.slice(0,10):null,
-      year:r.applieddate?+r.applieddate.slice(0,4):null,
-      month:r.applieddate?+r.applieddate.slice(5,7)-1:null,
-      dti:(r.applieddate&&r.issueddate)?(dd=>dd>=0?dd:null)(Math.round((new Date(r.issueddate)-new Date(r.applieddate))/864e5)):null,   // negative = data error → excluded, matching the server-side case() guard
-      type:r.permittype, cls:r.permitclassgroup||'Unspecified', clsDetail:r.permitclass,
-      work:r.workclass||'Unspecified', desc:r.description,
-      contractor:r.contractorname, units:+r.housingunits||0,
-      cost:r.estprojectcost==null?null:+r.estprojectcost,
-      addr:r.originaladdress, community:r.communityname,
-      lat:r.latitude==null?null:+r.latitude, lng:r.longitude==null?null:+r.longitude
-    }));
+    this.allRows = raw.map(r=>this.ds.mapRow(r));   // full scope (year/community/category); search filters this CLIENT-SIDE
     this.showDetail();     // apply the client-side search filter, compute stats, render
   },
 
@@ -866,18 +1014,20 @@ const D = {
       cls:top('cls',9), work:top('work',8), month:mo, contr:top('contractor',10),
       status:top('status',20),
       comms:Object.entries(commMap).map(([name,e])=>({name,n:e.n,cost:e.cost,lat:e.lat/e.n,lng:e.lng/e.n})),
-      head:{n:f.length, c:f.reduce((s,d)=>s+(d.cost||0),0), u:f.reduce((s,d)=>s+d.units,0), d:median(f.map(d=>d.dti).filter(v=>v!=null))}
+      head:this.ds.headFromRows(f)
     };
-    const byAddr={};
-    f.forEach(d=>{if(!d.addr||!d.applied)return;(byAddr[d.addr]=byAddr[d.addr]||[]).push(d);});
     this.renovLags=[];
-    Object.values(byAddr).forEach(list=>{
-      const news=list.filter(d=>d.work==='New').sort((a,b)=>a.applied<b.applied?-1:1);
-      if(!news.length)return;
-      const built=news[0].applied;
-      const imps=list.filter(d=>d.work!=='New'&&d.work!=='Demolition'&&d.applied>built).sort((a,b)=>a.applied<b.applied?-1:1);
-      if(imps.length)this.renovLags.push((new Date(imps[0].applied)-new Date(built))/(365.25*864e5));
-    });
+    if(this.ds.renov){                       // new-build → first-renovation pairing needs the building-permit work classes
+      const byAddr={};
+      f.forEach(d=>{if(!d.addr||!d.applied)return;(byAddr[d.addr]=byAddr[d.addr]||[]).push(d);});
+      Object.values(byAddr).forEach(list=>{
+        const news=list.filter(d=>d.work==='New').sort((a,b)=>a.applied<b.applied?-1:1);
+        if(!news.length)return;
+        const built=news[0].applied;
+        const imps=list.filter(d=>d.work!=='New'&&d.work!=='Demolition'&&d.applied>built).sort((a,b)=>a.applied<b.applied?-1:1);
+        if(imps.length)this.renovLags.push((new Date(imps[0].applied)-new Date(built))/(365.25*864e5));
+      });
+    }
     this.render();
     this.detailTable();
   },
@@ -895,68 +1045,47 @@ const D = {
     document.getElementById('count-badge').innerHTML = `<span class="num tnum">${fmtN(this.total)}</span> permits in scope`;
     document.getElementById('card-renov').classList.toggle('locked',!detail);
     { const cc=document.getElementById('card-compare'); if(cc&&cc.style) cc.style.display=detail?'none':''; }   // compare is a city-view panel
-    document.getElementById('costh-hint').textContent = detail?'':(s.costh?`— ${fmtN(s.costh.reduce((a,b)=>a+b,0))} permits with cost data`:'— unavailable right now');
-    const h=s.head;
-    document.getElementById('k-count').textContent=fmtN(h.n);
-    document.getElementById('k-cost').textContent=fmt$(h.c);
-    document.getElementById('k-cost-n').textContent = detail||!h.costn ? 'estimated project cost' : `estimates on file for ${fmtN(h.costn)} of ${fmtN(h.n)} permits`;
-    document.getElementById('k-units').textContent=fmtN(h.u);
-    if(detail){
-      const costs=this.rows.map(d=>d.cost).filter(v=>v!=null);
-      document.getElementById('k-med-l').textContent='Median project cost';
-      document.getElementById('k-med').textContent=fmt$(median(costs));
-      document.getElementById('k-med-n').textContent=costs.length?`max ${fmt$(Math.max(...costs))}`:'';
-      document.getElementById('k-dti-l').textContent='Median days to issue';
-      document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
-      const newPct=this.rows.length?this.rows.filter(d=>d.work==='New').length/this.rows.length*100:0;
-      document.getElementById('k-count-n').textContent=`${newPct.toFixed(0)}% new construction`;
-      document.getElementById('k-dti-n').textContent='';
-    }else{
-      document.getElementById('k-med-l').textContent='Avg project cost';
-      document.getElementById('k-med').textContent=fmt$(h.avgc);
-      document.getElementById('k-med-n').textContent='median needs detail view';
-      document.getElementById('k-dti-l').textContent='Avg days to issue';
-      document.getElementById('k-dti').textContent=h.d==null?'—':h.d.toFixed(0);
-      document.getElementById('k-dti-n').textContent='';
-      document.getElementById('k-count-n').textContent=h.n?`${(h.newn/h.n*100).toFixed(0)}% new construction`:'';   // dedicated aggregate — independent of the top-8 work-class truncation
-    }
-    const done=(s.status.find(x=>x[0]==='Completed')||[null,0])[1];
-    const open=['In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold'];
-    const resolved=s.status.filter(x=>!open.includes(x[0])).reduce((a,x)=>a+x[1],0);
-    document.getElementById('k-comp').textContent=resolved?`${(done/resolved*100).toFixed(0)}%`:'—';
-    document.getElementById('k-comp-n').textContent=`${fmtN(done)} completed`;
+    { const ch=document.getElementById('card-costh'); if(ch&&ch.style) ch.style.display=this.ds.hasCost?'':'none';   // cost & renovation cards exist only for datasets carrying those fields
+      const cr=document.getElementById('card-renov'); if(cr&&cr.style) cr.style.display=this.ds.renov?'':'none'; }
+    if(this.ds.hasCost) document.getElementById('costh-hint').textContent = detail?'':(s.costh?`— ${fmtN(s.costh.reduce((a,b)=>a+b,0))} permits with cost data`:'— unavailable right now');
+    this.ds.kpis(this,s,detail);
     const set=(ch,labels,...data)=>{ch.data.labels=labels;data.forEach((d,i)=>ch.data.datasets[i].data=d);ch.update('none');};
-    set(this.charts.year,s.yr.map(r=>r.k),s.yr.map(r=>r.n),s.yr.map(r=>r.c));
+    if(this.ds.hasCost) set(this.charts.year,s.yr.map(r=>r.k),s.yr.map(r=>r.n),s.yr.map(r=>r.c));
+    else set(this.charts.year,s.yr.map(r=>r.k),s.yr.map(r=>r.n));
     set(this.charts.cls,s.cls.map(c=>c[0]),s.cls.map(c=>c[1]));
     set(this.charts.work,s.work.map(c=>c[0]),s.work.map(c=>c[1]));
     set(this.charts.month,MONTHS,s.month);
     set(this.charts.contr,s.contr.map(c=>String(c[0]).length>26?String(c[0]).slice(0,25)+'…':c[0]),s.contr.map(c=>c[1]));
     set(this.charts.speed,s.yr.map(r=>r.k),s.yr.map(r=>r.d));
-    { const sh=document.getElementById('speed-hint'); if(sh) sh.textContent=detail?'— median days applied→issued, by year':'— avg days applied→issued, by year';   // detail plots client-side medians; city plots server averages
-      const sc=document.getElementById('c-speed'); if(sc&&sc.setAttribute) sc.setAttribute('aria-label',(detail?'Median':'Average')+' days to issue by year'); }
+    { const sh=document.getElementById('speed-hint'); if(sh) sh.textContent='— '+(detail?'median':'avg')+' days '+this.ds.speedNoun+', by year';   // detail plots client-side medians; city plots server averages
+      const sc=document.getElementById('c-speed'); if(sc&&sc.setAttribute) sc.setAttribute('aria-label',(detail?'Median':'Average')+` days to ${this.ds.dtiWord} by year`); }
     let cp=0,cu=0;
-    set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n),s.yr.map(r=>cu+=r.u));
+    if(this.ds.hasUnits) set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n),s.yr.map(r=>cu+=r.u));
+    else set(this.charts.cum,s.yr.map(r=>r.k),s.yr.map(r=>cp+=r.n));
     if(detail){
-      set(this.charts.costh,COST_BINS.map(b=>b.l),binCounts(this.rows.map(d=>d.cost).filter(v=>v!=null),COST_BINS));
-      set(this.charts.dtih,DTI_BINS.map(b=>b.l),binCounts(this.rows.map(d=>d.dti).filter(v=>v!=null),DTI_BINS));
-      const maxLag=15,rl=Array(maxLag+1).fill(0);
-      this.renovLags.forEach(v=>rl[Math.min(Math.floor(v),maxLag)]++);
-      set(this.charts.renov,rl.map((_,i)=>i<maxLag?`${i}–${i+1}`:`${maxLag}+`),rl);
+      if(this.ds.hasCost) set(this.charts.costh,COST_BINS.map(b=>b.l),binCounts(this.rows.map(d=>d.cost).filter(v=>v!=null),COST_BINS));
+      set(this.charts.dtih,this.ds.dtiBins.map(b=>b.l),binCounts(this.rows.map(d=>d.dti).filter(v=>v!=null),this.ds.dtiBins));
+      if(this.ds.renov){
+        const maxLag=15,rl=Array(maxLag+1).fill(0);
+        this.renovLags.forEach(v=>rl[Math.min(Math.floor(v),maxLag)]++);
+        set(this.charts.renov,rl.map((_,i)=>i<maxLag?`${i}–${i+1}`:`${maxLag}+`),rl);
+      }
     }else{
-      set(this.charts.costh,COST_BINS.map(b=>b.l),s.costh||[]);
-      set(this.charts.dtih,DTI_BINS.map(b=>b.l),s.dtih||[]);
+      if(this.ds.hasCost) set(this.charts.costh,COST_BINS.map(b=>b.l),s.costh||[]);
+      set(this.charts.dtih,this.ds.dtiBins.map(b=>b.l),s.dtih||[]);
     }
     this.updateMap(); this.insights(); this.updateSearchHint();
   },
 
   buildCharts(){
+    const ds=this.ds;
     const base={responsive:true,maintainAspectRatio:false,animation:false};
     const SURFACE = isDark()?'#161c24':'#ffffff';
     this.charts.year=new Chart(document.getElementById('c-year'),{data:{labels:[],datasets:[
       {type:'bar',label:'Permits',data:[],backgroundColor:C.blue+'CC',borderRadius:4,yAxisID:'y',order:2},
-      {type:'line',label:'Est. cost',data:[],borderColor:C.amber,backgroundColor:C.amber+'2E',borderWidth:2,tension:.3,pointRadius:3,pointBackgroundColor:C.amber,yAxisID:'y1',order:1}
+      ...(ds.hasCost?[{type:'line',label:'Est. cost',data:[],borderColor:C.amber,backgroundColor:C.amber+'2E',borderWidth:2,tension:.3,pointRadius:3,pointBackgroundColor:C.amber,yAxisID:'y1',order:1}]:[])
     ]},options:{...base,interaction:{mode:'index',intersect:false},plugins:{tooltip:{callbacks:{label:c=>c.dataset.label==='Est. cost'?` Est. cost: ${fmt$(c.parsed.y)}`:` Permits: ${fmtN(c.parsed.y)}`}}},
-      scales:{y:{beginAtZero:true,title:{display:true,text:'permits'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>fmt$(v)}}}}});
+      scales:{y:{beginAtZero:true,title:{display:true,text:'permits'}},...(ds.hasCost?{y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},ticks:{callback:v=>fmt$(v)}}}:{})}}});
     this.charts.cls=new Chart(document.getElementById('c-cls'),{type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:COLORS,borderColor:SURFACE,borderWidth:2}]},
       options:{...base,cutout:'60%',plugins:{legend:{position:'right',labels:{font:{size:11}}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((a,b)=>a+b,0);return ` ${c.label}: ${fmtN(c.parsed)} (${(c.parsed/t*100).toFixed(1)}%)`;}}}}}});
     this.charts.work=new Chart(document.getElementById('c-work'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:COLORS.map(c=>c+'CC'),borderRadius:4}]},
@@ -969,12 +1098,12 @@ const D = {
       options:{...base,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.parsed.y==null?'—':c.parsed.y.toFixed(0)} days (${D.mode==='detail'?'median':'avg'})`}}},scales:{y:{beginAtZero:true,title:{display:true,text:'days'}}}}});
     this.charts.cum=new Chart(document.getElementById('c-cum'),{type:'line',data:{labels:[],datasets:[
       {label:'Cumulative permits',data:[],borderColor:C.blue,backgroundColor:C.blue+'25',borderWidth:2,tension:.2,fill:true,pointRadius:2,yAxisID:'y'},
-      {label:'Cumulative housing units',data:[],borderColor:C.green,borderWidth:2,tension:.2,fill:false,pointRadius:2,yAxisID:'y1'}
+      ...(ds.hasUnits?[{label:'Cumulative housing units',data:[],borderColor:C.green,borderWidth:2,tension:.2,fill:false,pointRadius:2,yAxisID:'y1'}]:[])
     ]},options:{...base,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top'}},
-      scales:{y:{beginAtZero:true,title:{display:true,text:'permits'}},y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'units'}}}}});
+      scales:{y:{beginAtZero:true,title:{display:true,text:'permits'}},...(ds.hasUnits?{y1:{beginAtZero:true,position:'right',grid:{drawOnChartArea:false},title:{display:true,text:'units'}}}:{})}}});
     this.charts.costh=new Chart(document.getElementById('c-costh'),{type:'bar',data:{labels:COST_BINS.map(b=>b.l),datasets:[{data:[],backgroundColor:C.amber+'CC',borderRadius:4}]},
       options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
-    this.charts.dtih=new Chart(document.getElementById('c-dtih'),{type:'bar',data:{labels:DTI_BINS.map(b=>b.l),datasets:[{data:[],backgroundColor:C.blue+'CC',borderRadius:4}]},
+    this.charts.dtih=new Chart(document.getElementById('c-dtih'),{type:'bar',data:{labels:ds.dtiBins.map(b=>b.l),datasets:[{data:[],backgroundColor:C.blue+'CC',borderRadius:4}]},
       options:{...base,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
     this.charts.renov=new Chart(document.getElementById('c-renov'),{type:'bar',data:{labels:[],datasets:[{data:[],backgroundColor:C.purple+'CC',borderRadius:4}]},
       options:{...base,plugins:{legend:{display:false}},scales:{x:{title:{display:true,text:'years until first renovation'}},y:{beginAtZero:true}}}});
@@ -995,13 +1124,13 @@ const D = {
     this.updateMapControls();
     const legend=document.getElementById('map-legend');
     if(this.mode==='detail'&&this.rows){
-      document.getElementById('map-hint').textContent='— individual permits, coloured by permit class; click a point for details';
+      document.getElementById('map-hint').textContent=this.ds.mapDetailHint;
       const pts=[], used={};
       this.rows.forEach(d=>{
         if(d.lat==null||!isFinite(d.lat))return; pts.push([d.lat,d.lng]);
         const col=this.clsColorFor(d.cls); used[d.cls]=col;
         L.circleMarker([d.lat,d.lng],{radius:d.cost?Math.min(11,3+Math.log10(Math.max(d.cost,100))):4,weight:1,color:'#fff',fillColor:col,fillOpacity:.82})
-          .bindPopup(`<b>${esc(d.id)}</b> · ${esc(d.status)}<br>${esc(d.addr)} · ${esc(d.community)}<br>${esc(d.cls)} — ${esc(d.work)}<br>${esc((d.desc||'').slice(0,120))}<br><b>${fmt$(d.cost)}</b>${d.contractor?' · '+esc(d.contractor):''}<br>Applied ${d.applied||'—'}`)
+          .bindPopup(this.ds.popup(d))
           .addTo(this.layer);
       });
       if(pts.length)this.map.fitBounds(pts,{padding:[24,24],maxZoom:16});
@@ -1017,7 +1146,7 @@ const D = {
   },
   drawChoropleth(){
     const legend=document.getElementById('map-legend');
-    const metric=CHORO_METRICS[this.choroMetric]||CHORO_METRICS.ppy;
+    const metric=this.ds.choroMetrics[this.choroMetric]||this.ds.choroMetrics.ppy;
     const minN=metric.minN||3;
     document.getElementById('map-hint').textContent=`— communities shaded by ${metric.short}; grey = too few permits or no boundary; click an area to drill in`;
     const byName={}, vals=[];
@@ -1092,7 +1221,7 @@ const D = {
       .finally(()=>this.busy(false));
   },
   retryBoundaries(){ this.clearError(); this.updateMap(); },   // boundaries/_bPromise are null after a failure, so updateMap re-enters the load
-  setChoroMetric(m){ if(CHORO_METRICS[m]) this.choroMetric=m; this.writeURL(); this.updateMap(); },
+  setChoroMetric(m){ if(this.ds.choroMetrics[m]) this.choroMetric=m; this.writeURL(); this.updateMap(); },
 
   // --- compare communities: a city-view panel that fetches each selected community independently ---
   cmpColor(i){ return COLORS[i%COLORS.length]; },
@@ -1125,12 +1254,8 @@ const D = {
     if(y1) w.push(`applieddate >= '${y1}-01-01T00:00:00'`);
     if(y2) w.push(`applieddate <= '${y2}-12-31T23:59:59'`);
     w.push(`upper(communityname) = '${sq(String(name).toUpperCase())}'`);
-    if(this.cats && this.activeCats){
-      const n=this.activeCats.size, total=this.cats.length;
-      if(n===0) w.push("permitclassgroup IN ('')");
-      else if(n<total){ const inList=this.cats.filter(c=>this.activeCats.has(c.name)).map(c=>`'${sq(c.name)}'`).join(','); w.push(`permitclassgroup IN (${inList})`); }
-    }
-    const work=this.val('f-work'); if(work) w.push(`workclass = '${sq(work)}'`);
+    const cc=this.catClause(); if(cc) w.push(cc);
+    const work=this.val('f-work'); if(work) w.push(`${this.ds.sec.field} = '${sq(work)}'`);
     const st=this.val('f-status'); if(st) w.push(`statuscurrent = '${sq(st)}'`);
     return w.join(' AND ');
   },
@@ -1141,12 +1266,11 @@ const D = {
     const ac=(typeof AbortController!=='undefined')?new AbortController():null;
     this._cmpAc=ac; const signal=ac&&ac.signal;
     const span=Math.max(1,(+this.val('f-y2')||0)-(+this.val('f-y1')||0)+1);
-    const open="statuscurrent in ('In Review','Pending Plans Review','Pending Plans Review Assignment','Issued Permit','Hold')";
     this.busy(true);
     try{
       const names=this.cmpSel.slice();
       const results=await Promise.all(names.map(nm=>soql({
-        select:`date_extract_y(applieddate) as k, count(1) as n, sum(estprojectcost) as c, count(estprojectcost) as cn, sum(housingunits) as u, sum(case(date_diff_d(issueddate,applieddate)>=0,date_diff_d(issueddate,applieddate))) as dsum, sum(case(date_diff_d(issueddate,applieddate)>=0,1,true,0)) as dcnt, count(statuscurrent) as sn, sum(case(statuscurrent='Completed',1,true,0)) as done, sum(case(${open},1,true,0)) as openn`,
+        select:this.ds.cmpSelect,
         where:this.cmpWhere(nm), group:'k', order:'k'
       },signal).catch(e=>{ if(isAbort(e)) throw e; return {error:(e&&e.message)||'request failed'}; })));   // sentinel — a failed community must never render as zeros
       if(seq!==this._cmpSeq) return;                              // superseded by a newer selection/filter
@@ -1154,10 +1278,7 @@ const D = {
       names.forEach((nm,idx)=>{
         const res=results[idx];
         if(res&&res.error){ data[nm]={error:res.error}; return; }   // keep the failure visible to renderCompare
-        const rows=(res||[]).filter(r=>+r.k>=1980).map(r=>({k:+r.k,n:+r.n||0,c:+r.c||0,cn:+r.cn||0,u:+r.u||0,dsum:+r.dsum||0,dcnt:+r.dcnt||0,sn:+r.sn||0,done:+r.done||0,openn:+r.openn||0}));
-        const t=rows.reduce((a,r)=>({n:a.n+r.n,c:a.c+r.c,cn:a.cn+r.cn,u:a.u+r.u,dsum:a.dsum+r.dsum,dcnt:a.dcnt+r.dcnt,sn:a.sn+r.sn,done:a.done+r.done,openn:a.openn+r.openn}),{n:0,c:0,cn:0,u:0,dsum:0,dcnt:0,sn:0,done:0,openn:0});
-        data[nm]={ yr:rows, n:t.n, c:t.c, u:t.u, avgCost:t.cn?t.c/t.cn:null, dti:t.dcnt?t.dsum/t.dcnt:null,
-          comp:(t.sn-t.openn)>0?t.done/(t.sn-t.openn):null, ppy:t.n/span };   // resolved = non-null statuses − open, same rule as the KPI/choropleth
+        data[nm]=this.ds.cmpAgg(res,span);
       });
       this.cmpData=data; this.renderCompare();
     }catch(e){ if(!isAbort(e)&&seq===this._cmpSeq) this.error(e.message); }
@@ -1180,15 +1301,7 @@ const D = {
     }
     if(empty&&empty.style) empty.style.display='none';
     if(body&&body.style) body.style.display='';
-    const rows=[
-      {l:'Permits',            f:d=>d.n,       fmt:fmtN,                                     best:'max'},
-      {l:'Total est. cost',    f:d=>d.c,       fmt:fmt$,                                     best:'max'},
-      {l:'Avg cost / permit',  f:d=>d.avgCost, fmt:fmt$,                                     best:'max'},
-      {l:'Avg days to issue',  f:d=>d.dti,     fmt:v=>v==null?'—':Math.round(v)+' d',        best:'min'},
-      {l:'Completion rate',    f:d=>d.comp,    fmt:v=>v==null?'—':Math.round(v*100)+'%',     best:'max'},
-      {l:'Housing units',      f:d=>d.u,       fmt:fmtN,                                     best:'max'},
-      {l:'Avg permits / year', f:d=>d.ppy,     fmt:v=>v==null?'—':(v>=10?Math.round(v).toLocaleString():v.toFixed(1)), best:'max'}
-    ];
+    const rows=this.ds.cmpMetrics;
     let h='<table class="cmp"><thead><tr><th>Metric</th>';
     names.forEach(nm=>{ h+=`<th><span class="sw" style="background:${this.cmpColor(this.cmpSel.indexOf(nm))}"></span>${esc(nm)}</th>`; });
     h+='</tr></thead><tbody>';
@@ -1224,61 +1337,24 @@ const D = {
 
   insights(){
     const s=this.stats,out=[];
-    if(s&&s.head.n){
-      if(s.yr.length>1){
-        const by=[...s.yr].sort((a,b)=>b.n-a.n)[0];
-        out.push(`Busiest year: <b>${by.k}</b> with <b>${fmtN(by.n)}</b> permit applications.`);
-        const bc=[...s.yr].sort((a,b)=>b.c-a.c)[0];
-        out.push(`Peak construction value: <b>${bc.k}</b> at <b>${fmt$(bc.c)}</b>.`);
-      }
-      if(s.contr.length)out.push(`Most active contractor: <b>${esc(s.contr[0][0])}</b> with <b>${fmtN(s.contr[0][1])}</b> permits.`);
-      const mMax=s.month.indexOf(Math.max(...s.month));
-      out.push(`Seasonal pattern: applications peak in <b>${MONTHS[mMax]}</b> (${fmtN(s.month[mMax])}).`);
-      if(this.mode==='city'&&s.comms.length>1)out.push(`Most active community in scope: <b>${esc(s.comms[0].name)}</b> with <b>${fmtN(s.comms[0].n)}</b> permits (${fmt$(s.comms[0].cost)}).`);
-      const canc=(s.status.find(x=>x[0]==='Cancelled')||[null,0])[1];
-      if(canc)out.push(`<b>${fmtN(canc)}</b> permits (${(canc/s.head.n*100).toFixed(1)}%) were cancelled.`);
-      if(this.mode==='detail'){
-        const big=this.rows.filter(d=>d.cost!=null).sort((a,b)=>b.cost-a.cost)[0];
-        if(big)out.push(`Largest project: <b>${fmt$(big.cost)}</b> — ${esc((big.desc||big.cls).slice(0,80))} (${esc(big.id)}, ${big.year}).`);
-        if(this.renovLags.length>5)out.push(`Renovation lifecycle: <b>${this.renovLags.length}</b> buildings renovated after a new build — median <b>${median(this.renovLags).toFixed(1)} years</b> later.`);
-        const costs=this.rows.map(d=>d.cost).filter(v=>v!=null).sort((a,b)=>b-a);
-        if(costs.length>20){
-          const tot=costs.reduce((a,b)=>a+b,0),n10=Math.ceil(costs.length*.1);
-          out.push(`Cost concentration: the top <b>10%</b> of projects account for <b>${(costs.slice(0,n10).reduce((a,b)=>a+b,0)/tot*100).toFixed(0)}%</b> of estimated value.`);
-        }
-      }else{
-        out.push(`Filter down to under <b>${fmtN(DETAIL_THRESHOLD)}</b> permits (a community, or a single year city-wide) to unlock median KPIs, renovation lifecycle, and the permit-point map.`);
-      }
-    } else out.push('No permits match the current filters.');
+    if(s&&s.head.n) this.ds.insights(this,s,out);
+    else out.push('No permits match the current filters.');
     document.getElementById('insights').innerHTML=out.map(t=>`<div class="insight">${t}</div>`).join('');
   },
 
-  COLS:[
-    {f:'permitnum',df:'id',l:'Permit #'},{f:'applieddate',df:'applied',l:'Applied'},{f:'statuscurrent',df:'status',l:'Status'},
-    {f:'communityname',df:'community',l:'Community'},{f:'permitclassgroup',df:'cls',l:'Class'},{f:'workclass',df:'work',l:'Work'},
-    {f:'estprojectcost',df:'cost',l:'Est. Cost',num:1},{f:'contractorname',df:'contractor',l:'Contractor'},
-    {f:'originaladdress',df:'addr',l:'Address'},{f:'description',df:'desc',l:'Description'}
-  ],
   sort(f){ if(this.sortCol===f)this.sortDir=this.sortDir==='asc'?'desc':'asc'; else{this.sortCol=f;this.sortDir='desc';} this.pageNum=0; this.mode==='city'?this.cityTable():this.detailTable(); },
   page(d){ this.pageNum+=d; this.mode==='city'?this.cityTable():this.detailTable(); },
 
   rowsHtml(list){
     let h='<table><thead><tr>';
-    this.COLS.forEach(c=>{
+    this.ds.cols.forEach(c=>{
       const active=this.sortCol===c.f;
       const ar=active?(this.sortDir==='asc'?' <span class="ar">▲</span>':' <span class="ar">▼</span>'):'';
       const aria=active?` aria-sort="${this.sortDir==='asc'?'ascending':'descending'}"`:'';
       h+=`<th scope="col" tabindex="0"${aria} class="${c.num?'th-num':''}${active?' sorted':''}" onclick="D.sort('${c.f}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();D.sort('${c.f}')}">${c.l}${ar}</th>`;
     });
     h+='</tr></thead><tbody>';
-    list.forEach(d=>{
-      const stc=STATUS_COLORS[d.status]||['#eceff1','#546e7a'];
-      h+=`<tr><td style="white-space:nowrap">${esc(d.id)}</td><td style="white-space:nowrap">${d.applied||'—'}</td>`+
-        `<td><span class="pill" style="background:${stc[0]};color:${stc[1]}">${esc(d.status)}</span></td>`+
-        `<td>${esc(d.community)||'—'}</td><td>${esc(d.cls)}</td><td>${esc(d.work)}</td><td class="num">${fmt$(d.cost)}</td>`+
-        `<td>${esc(d.contractor)||'—'}</td><td>${esc(d.addr)||'—'}</td>`+
-        `<td class="desc-cell">${d.desc?esc(d.desc.length>110?d.desc.slice(0,108)+'…':d.desc):'—'}</td></tr>`;
-    });
+    list.forEach(d=>{ h+='<tr>'+this.ds.cols.map(c=>c.r(d)).join('')+'</tr>'; });
     return h+'</tbody></table>';
   },
   pgUpdate(shown,total){
@@ -1298,13 +1374,11 @@ const D = {
     this.busy(true);
     try{
       const where=this.where();
-      const raw=await soql({select:'permitnum,statuscurrent,applieddate,permitclassgroup,workclass,description,contractorname,estprojectcost,originaladdress,communityname',
+      const raw=await soql({select:this.ds.cols.map(c=>c.f).join(','),
         limit:String(this.pageSize), offset:String(this.pageNum*this.pageSize),
         order:`${this.sortCol} ${this.sortDir.toUpperCase()}`, ...(where?{where}:{}), ...this.qParam()}, signal);
       if(seq!==this._tblSeq) return;               // a newer sort/page/filter superseded this fetch
-      const list=raw.map(r=>({id:r.permitnum,status:r.statuscurrent||'Unknown',applied:r.applieddate?r.applieddate.slice(0,10):null,
-        community:r.communityname,cls:r.permitclassgroup||'—',work:r.workclass||'—',cost:r.estprojectcost==null?null:+r.estprojectcost,
-        contractor:r.contractorname,addr:r.originaladdress,desc:r.description}));
+      const list=raw.map(r=>this.ds.mapTableRow(r));
       document.getElementById('tbl').innerHTML=this.rowsHtml(list);
       this.pgUpdate(list.length,this.total);
     }catch(e){ if(!isAbort(e) && seq===this._tblSeq) this.error(e.message); }
@@ -1312,7 +1386,7 @@ const D = {
   },
 
   detailTable(){
-    const dfMap={}; this.COLS.forEach(c=>dfMap[c.f]=c.df);
+    const dfMap={}; this.ds.cols.forEach(c=>dfMap[c.f]=c.df);
     const sc=dfMap[this.sortCol]||'applied', dir=this.sortDir==='asc'?1:-1;
     const sorted=[...this.rows].sort((a,b)=>{
       let x=a[sc],y=b[sc];
@@ -1335,11 +1409,11 @@ const D = {
   exportCsv(){
     if(this.total===0){ return; }
     const stamp=new Date().toISOString().slice(0,10);
-    const fname=`calgary-permits-${stamp}.csv`;
+    const fname=`${this.ds.csvName}-${stamp}.csv`;
     if(this.mode==='detail' && this.rows){
       // detail mode already holds every row in scope — build the file client-side
-      const head=this.COLS.map(c=>this.csvCell(c.l)).join(',');
-      const body=this.rows.map(r=>this.COLS.map(c=>this.csvCell(r[c.df])).join(',')).join('\r\n');
+      const head=this.ds.cols.map(c=>this.csvCell(c.l)).join(',');
+      const body=this.rows.map(r=>this.ds.cols.map(c=>this.csvCell(r[c.df])).join(',')).join('\r\n');
       const blob=new Blob([head+'\r\n'+body],{type:'text/csv;charset=utf-8'});
       const url=URL.createObjectURL(blob), a=document.createElement('a');
       a.href=url; a.download=fname; document.body.appendChild(a); a.click();
@@ -1352,11 +1426,11 @@ const D = {
       alert(`This selection has ${fmtN(this.total)} permits; the export will include the ${fmtN(CAP)} most recent. Narrow the filters for a complete export.`);
     }
     const where=this.where(), q=this.qParam();
-    const params={ select:'permitnum,applieddate,statuscurrent,communityname,permitclassgroup,workclass,estprojectcost,contractorname,originaladdress,description',
+    const params={ select:this.ds.cols.map(c=>c.f).join(','),
       order:`${this.sortCol} ${this.sortDir.toUpperCase()}`, limit:String(CAP) };
     if(where) params.where=where; if(q.q) params.q=q.q;
     const qs=Object.entries(params).map(([k,v])=>`${encodeURIComponent('$'+k)}=${encodeURIComponent(v)}`).join('&');
-    const a=document.createElement('a'); a.href=`https://data.calgary.ca/resource/c2es-76ed.csv?${qs}`;
+    const a=document.createElement('a'); a.href=`${this.ds.api.replace(/\.json$/,'.csv')}?${qs}`;
     a.download=fname; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
   }
 };
