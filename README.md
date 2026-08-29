@@ -3,35 +3,44 @@
 [![CI](https://github.com/shepherd70/permit-explorer/actions/workflows/ci.yml/badge.svg)](https://github.com/shepherd70/permit-explorer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A live, single-page tool for exploring City of Calgary building-permit data —
-all 490K+ permits across every community, queried from Calgary's open-data API
-in your browser. One self-contained static HTML file, no backend, served at the
-site root.
+A live, single-page tool for exploring City of Calgary permit data — all 490K+
+building permits and 190K+ development permits across every community, queried
+from Calgary's open-data API in your browser. One self-contained static HTML
+file, no backend, served at the site root.
 
 **Live at <https://yyc-permits.krevian.com/>.**
 
 ## Features
 
-- Filters — year range, community, **permit category** (multi-select show/hide:
-  Single Family, Commercial, Two Family, …, built from the data), work type,
-  status, and free-text search — that update every metric, chart, the map, and
-  the table at once
-- KPI cards: permit count, total/median estimated cost, housing units,
-  median days-to-issue, completion rate
-- Charts: yearly volume vs. construction value, permit-class mix, work type,
-  monthly seasonality, top contractors, processing-speed trend, cumulative
-  buildout, cost and days-to-issue distributions, and a renovation-lifecycle
-  analysis (years from new build to first renovation at the same address)
-- Auto-computed insights that recalculate for the current filter
+- **Two datasets behind one toggle** — Building permits (construction: cost,
+  contractor, completion) and Development permits (the planning approvals that
+  precede construction: permitted vs. discretionary use, land-use district,
+  approval or refusal). Every surface below adapts to the active dataset; a
+  `DATASETS` config registry holds each dataset's endpoint, fields, SoQL,
+  columns and metrics
+- Filters — year range, community, **category** (multi-select show/hide built
+  from the data; development permits keep their 29% legacy-null rows visible as
+  an "(uncategorized)" option), work type / permitted-vs-discretionary, status,
+  and free-text search — that update every metric, chart, the map, and the
+  table at once
+- KPI cards — building: count, total/median estimated cost, housing units,
+  days-to-issue, completion rate; development: count, discretionary share,
+  released share, refusals, days-to-decision, **approval rate** (from the
+  `decision` field: approvals ÷ decided)
+- Charts: yearly volume, category mix, work type / permitted-vs-discretionary,
+  monthly seasonality, top contractors / top applicants, processing- or
+  decision-speed trend, cumulative buildout, cost and days-to-issue/-decision
+  distributions, and a renovation-lifecycle analysis (building permits)
+- Auto-computed insights that recalculate for the current filter (incl. SDAB
+  appeal-hearing counts for development permits)
 - Leaflet **community choropleth** shading each community by avg permits/year,
-  avg project cost, avg days-to-issue, or completion rate (colour-blind-safe
-  cividis ramp, boundaries fetched live); permit-level points sized by cost and
-  coloured by class in detail view
-- **Compare communities** — pick 2–4 and see permits, cost, processing speed and
-  completion side by side (a metrics table + a permits-by-year chart), for the
-  current filters
-- Sortable, paginated permit table, shareable URL state (filters + map metric +
-  compared communities), and CSV export of the current selection
+  avg project cost, avg days-to-issue/-decision, completion or approval rate
+  (colour-blind-safe cividis ramp, boundaries fetched live); permit-level
+  points coloured by category in detail view
+- **Compare communities** — pick 2–4 and see the active dataset's metrics side
+  by side (a metrics table + a permits-by-year chart), for the current filters
+- Sortable, paginated permit table, shareable URL state (dataset + filters +
+  map metric + compared communities), and CSV export of the current selection
 
 With a broad filter the tool shows city totals computed by the server; narrow to
 under 30,000 permits (a community, or one year city-wide) and it switches to
@@ -85,10 +94,13 @@ CDN assets (Chart.js, Leaflet) are loaded with Subresource Integrity (`integrity
 ## Testing
 
 A headless harness (Node) self-extracts the explorer's inline script, stubs the
-DOM / Chart.js / Leaflet, and asserts KPIs, charts, filtering, the permit-category
-filter, the choropleth (incl. the avg-permits/year metric and boundary-load
-recovery), community comparison, pagination, URL state, and the request-race
-guard. It exits non-zero on any failed assertion.
+DOM / Chart.js / Leaflet, routes its canned Socrata responses by resource id
+(one branch set per dataset), and asserts KPIs, charts, filtering, the category
+filter (incl. the development-permits `(category IN … OR category IS NULL)`
+branch), the dataset toggle (per-dataset KPI math, filter resets, cached option
+lists, URL `ds=` round-trips), the choropleth, community comparison,
+pagination, URL state, and the request-race guard. It exits non-zero on any
+failed assertion.
 
 ```bash
 npm test           # node test/city_harness.js
@@ -100,17 +112,20 @@ Actions are pinned to commit SHAs and kept current by Dependabot
 ([`.github/dependabot.yml`](.github/dependabot.yml)).
 
 `npm test` is deterministic and offline (canned API responses), so it can't
-notice if Calgary changes the live dataset. A separate **live-API smoke test**
-(`test/smoke.js`, `npm run smoke`) hits the real c2es-76ed endpoint and verifies
-every field and SoQL feature the explorer depends on still works — it
-self-extracts the field list and endpoint from `src/city_explorer.html` so it
-can't drift. A scheduled workflow (`.github/workflows/smoke.yml`) runs it daily
-and on demand, emailing on failure.
+notice if Calgary changes the live datasets. A separate **live-API smoke test**
+(`test/smoke.js`, `npm run smoke`) hits the real c2es-76ed and 6933-unw5
+endpoints — sequentially, one dataset at a time — and verifies every field and
+SoQL feature the explorer depends on still works; it self-extracts each
+dataset's endpoint, field list and head query from the `DATASETS` registry in
+`src/city_explorer.html` so it can't drift. A scheduled workflow
+(`.github/workflows/smoke.yml`) runs it daily and on demand, emailing on
+failure.
 
 ## Data & attribution
 
-Building-permit data comes from City of Calgary Open Data —
-[Building Permits (c2es-76ed)](https://data.calgary.ca/Business-and-Economic-Activity/Building-Permits/c2es-76ed),
+Permit data comes from City of Calgary Open Data —
+[Building Permits (c2es-76ed)](https://data.calgary.ca/Business-and-Economic-Activity/Building-Permits/c2es-76ed)
+and [Development Permits (6933-unw5)](https://data.calgary.ca/Business-and-Economic-Activity/Development-Permits/6933-unw5),
 subject to the City's Open Data Terms of Use. This is an independent project, not
 affiliated with or endorsed by The City of Calgary.
 
