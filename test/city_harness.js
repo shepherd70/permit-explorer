@@ -34,6 +34,60 @@ global.fetch=async(url)=>{
   const sel=p['$select']||'', grp=p['$group']||'', where=p['$where']||'';
   const detailScope = where.includes("communityname) = 'HARVEST HILLS'");
   const json=(d)=>({ok:true,status:200,json:async()=>d,text:async()=>JSON.stringify(d)});
+
+  // --- development permits (6933-unw5): routed by resource id BEFORE the building-permit branches ---
+  if(String(url).includes('6933-unw5')){
+    const dpDetail = where.includes("communityname) = 'BELTLINE'");
+    if(sel.includes('count(1) as n, avg(case(date_diff_d(decisiondate')&&!grp){
+      // category-aware count incl. the IS NULL branch (same idiom as the bp CAT_N stub below).
+      // appr+refn (174121) deliberately ≠ n, so approval computed as appr/n (88%) instead of
+      // appr/(appr+refn) (97%) fails the KPI assertion; discn/reln likewise disagree with
+      // decided-based ratios.
+      const CAT_N={'Residential - Secondary Suite':100000,'Home Occupation Class 2':60000}; const NULL_N=32471;   // + null = 192471
+      let n=192471;
+      if(dpDetail) n=4002;
+      else{
+        const m=where.match(/category IN \(([^)]*)\)/);
+        const wantNull=/category IS NULL/.test(where);
+        const inSum=m?m[1].split(',').reduce((s,t)=>s+(CAT_N[t.replace(/'/g,'').trim()]||0),0):null;
+        if(m&&wantNull) n=inSum+NULL_N; else if(m) n=inSum; else if(wantNull) n=NULL_N;
+      }
+      return json([{n:String(n),d:'50.9',appr:'168676',refn:'5445',discn:'117357',reln:'143824',sdab:'6575'}]);
+    }
+    if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('dcnt'))   // dp compare per-community yearly
+      return json([{k:'2018',n:'400',dsum:'20000',dcnt:'390',appr:'350',refn:'10',discn:'240'},{k:'2019',n:'600',dsum:'26000',dcnt:'590',appr:'500',refn:'25',discn:'260'}]);
+    if(grp==='k'&&sel.includes('date_extract_y')&&sel.includes('avg(case'))   // dp city yearly (avg days to decision)
+      return json([{k:'1979',n:'67',d:'30'},{k:'2026',n:'9463',d:'55'}]);
+    if(grp==='k'&&sel.includes('date_extract_y'))                             // dp init years — 1900 must be floored away by minYear (1979)
+      return json([{k:'1900',n:'1'},{k:'1979',n:'67'},{k:'2026',n:'9463'}]);
+    if(grp==='k'&&sel.includes('communityname')&&sel.includes('appr'))        // dp city communities (appr/refn → approval-rate shading)
+      return json([{k:'BELTLINE',n:'4002',d:'62',appr:'3600',refn:'150'},{k:'HARVEST HILLS',n:'900',d:'40',appr:'800',refn:'40'}]);
+    if(grp==='k'&&sel.includes('communityname'))                              // dp init communities (no cost/latlng aggregates on this dataset)
+      return json([{k:'BELTLINE',n:'4002'},{k:'HARVEST HILLS',n:'900'}]);
+    if(grp==='k'&&sel.includes('category'))                                   // categories: the null group arrives FIRST (largest) and key-less, as live
+      return json([{n:'32471'},{k:'Residential - Secondary Suite',n:'100000'},{k:'Home Occupation Class 2',n:'60000'}]);
+    if(grp==='k'&&sel.includes('permitteddiscretionary'))
+      return json([{k:'Discretionary',n:'117357'},{k:'Permitted',n:'44801'},{k:'Permitted with a Relaxation',n:'30093'}]);
+    if(grp==='k'&&sel.includes('statuscurrent'))
+      return json([{k:'Released',n:'143824'},{k:'Refused',n:'4329'}]);
+    if(grp==='b'&&sel.includes('case(')) return json([{b:'0',n:'32050'},{b:'3',n:'47146'}]);
+    if(grp==='k'&&sel.includes('date_extract_m')) return json(Array.from({length:12},(_,i)=>({k:String(i+1),n:String(500+i)})));
+    if(grp==='k'&&sel.includes('applicant')) return json([{k:'ARC SURVEYS',n:'2021'}]);
+    if(sel.startsWith('permitnum')&&p['$limit']==='30000')
+      return json(Array.from({length:4002},(_,i)=>({permitnum:'DP'+i,statuscurrent:i%9?'Released':'Refused',
+        applieddate:`20${10+(i%15)}-0${1+(i%9)}-05T00:00:00.000`,
+        ...(i%10?{decisiondate:`20${10+(i%15)}-0${1+(i%9)}-${i%41?'25':'01'}T00:00:00.000`}:{}),   // every 10th: undecided; every 41st decided row: decision BEFORE applied → dti must be null, never 0
+        decision:i%9?'Approval':(i%2?'Refusal':'Deemed Refusal'),
+        ...(i%4?{category:i%3?'Residential - Secondary Suite':'Home Occupation Class 2'}:{}),      // every 4th: null category → "(uncategorized)"
+        permitteddiscretionary:i%3?'Discretionary':'Permitted',
+        description:'proposed use '+i, applicant:i%5?'ARC SURVEYS':null,
+        landusedistrict:i%2?'R-C1':'CC-X',
+        ...(i%100?{}:{sdabhearingdate:'2020-01-01T00:00:00.000'}),
+        address:(i%300)+' FAKE AV SW', communityname:'BELTLINE', latitude:'51.04', longitude:'-114.07'})));
+    if(sel.startsWith('permitnum'))
+      return json([{permitnum:'DP1',statuscurrent:'Released',applieddate:'2024-01-02T00:00:00.000',decision:'Approval',communityname:'BELTLINE',permitteddiscretionary:'Permitted',landusedistrict:'R-C1',applicant:'X',address:'1 A AV',description:'d'}]);
+    return json([]);
+  }
   if(sel.includes('count(1) as n, sum(estprojectcost)')&&!grp){
     // category-aware count: model Single Family as the dominant category so hiding it via
     // the `permitclassgroup IN (...)` clause drops the FILTERED count below DETAIL_THRESHOLD
@@ -339,6 +393,103 @@ eval(src+'\nglobalThis.D=D;');
   check('cmpRemoveIdx removes the chip at that index', (()=>{ D.cmpSel=['HARVEST HILLS','DOWNTOWN COMMERCIAL CORE']; D.cmpRemoveIdx(0); return D.cmpSel.length===1 && D.cmpSel[0]==='DOWNTOWN COMMERCIAL CORE'; })(), D.cmpSel);
   D.cmpSel=[];                                                   // don't leak into later state
 
+  delete global.location; delete global.history;
+
+  // === development-permits mode (Building·Development dataset toggle, task #34) ===
+  global.location={search:'',pathname:'/',hash:'',_last:''};
+  global.history={replaceState:(s,t,url)=>{global.location._last=url;}};
+  // dp init-option fetch counter: the init category query is the one WITHOUT a $limit
+  const dpInitCats=()=>fetchLog.filter(u=>u.includes('6933-unw5')&&u.includes('category%20as%20k')&&!u.includes('%24limit')).length;
+  D.choroMetric='ppy';                                                          // earlier URL tests left 'dti' selected; start the toggle tests from the default
+  el('f-work').value='New'; el('f-q').value='reno'; D.sort('estprojectcost');   // dataset-scoped state that must NOT survive the toggle
+  await D.setDataset('dp'); await new Promise(r=>setTimeout(r,30));
+  console.log('DP MODE:', D.dsKey, '| total:', D.total, '| cats:', D.cats&&D.cats.length, '| url:', global.location._last);
+  check('toggle switches the active dataset', D.dsKey==='dp' && D.ds.label==='Development', D.dsKey);
+  check('toggle button states flip', el('ds-dp').classList._s.has('on') && !el('ds-bp').classList._s.has('on'), [[...el('ds-dp').classList._s],[...el('ds-bp').classList._s]]);
+  check('dp city total', D.total===192471, D.total);
+  check('dp count badge', digits(el('count-badge').innerHTML)==='192471', el('count-badge').innerHTML);
+  check('dataset-scoped filters reset on toggle (work/search/sort)', el('f-work').value==='all' && el('f-q').value==='' && D.sortCol==='applieddate', [el('f-work').value, el('f-q').value, D.sortCol]);
+  check('dp URL carries ds=dp and nothing stale', global.location._last==='/?ds=dp', global.location._last);
+  // KPI math — the stub's appr+refn (174,121) deliberately ≠ n (192,471): a regression to an
+  // n denominator would show 88% approval / 67% discretionary / 83% released instead
+  check('dp approval rate = appr ÷ (appr+refn) → 97%', el('k-comp').textContent==='97%', el('k-comp').textContent);
+  check('dp approval note names approved + decided counts', digits(el('k-comp-n').textContent)==='168676174121', el('k-comp-n').textContent);
+  check('dp avg days to decision', el('k-dti').textContent==='51', el('k-dti').textContent);
+  check('dp discretionary share = discn ÷ n → 61%', el('k-cost').textContent==='61%', el('k-cost').textContent);
+  check('dp released share = reln ÷ n → 75%', el('k-med').textContent==='75%', el('k-med').textContent);
+  check('dp refusals count', digits(el('k-units').textContent)==='5445', el('k-units').textContent);
+  check('dp KPI labels swapped (cost/units/comp cards repurposed)', el('k-cost-l').textContent==='Discretionary share' && el('k-units-l').textContent==='Refusals' && el('k-comp-l').textContent==='Approval rate', [el('k-cost-l').textContent,el('k-units-l').textContent,el('k-comp-l').textContent]);
+  check('dp copy swapped (work label, dtih title)', el('lbl-work').textContent==='Permitted / discretionary' && el('t-dtih').textContent==='Days-to-decision distribution', [el('lbl-work').textContent, el('t-dtih').textContent]);
+  check('dp cost/renov cards hidden', el('card-costh').style.display==='none' && el('card-renov').style.display==='none', [el('card-costh').style.display, el('card-renov').style.display]);
+  check('dp year chart drops the cost line', D.charts.year.data.datasets.length===1, D.charts.year.data.datasets.length);
+  check('dp cumulative chart drops the units axis', D.charts.cum.data.datasets.length===1, D.charts.cum.data.datasets.length);
+  check('dp days-to-decision bins re-binned', D.charts.dtih.data.labels.join('|')==='0–7 d|8–14 d|15–30 d|31–60 d|61–90 d|91–180 d|180+ d', D.charts.dtih.data.labels);
+  check('dp year floor keeps 1979, drops junk 1900', el('f-y1').options.length===2 && el('f-y1').options[0].value==='1979', el('f-y1').options.map(o=>o.value));
+  check('dp secondary filter lists permitted/discretionary uses', el('f-work').options.length===4 && /Discretionary/.test(el('f-work').options[1].text), el('f-work').options.map(o=>o.text));
+  // the synthetic "(uncategorized)" category (the null group arrives key-less and largest, as live)
+  check('dp categories: real values + (uncategorized)', D.cats.length===3 && D.cats[0].isNull===true && D.cats[0].name==='(uncategorized)' && D.cats[0].n===32471, D.cats);
+  check('dp where() has no category clause by default', !/category/.test(D.where()), D.where());
+  D.activeCats=new Set(['Residential - Secondary Suite','Home Occupation Class 2']);
+  check('unchecking (uncategorized) → plain IN, no IS NULL', /category IN \('Residential - Secondary Suite','Home Occupation Class 2'\)/.test(D.where()) && !/IS NULL/.test(D.where()), D.where());
+  D.activeCats=new Set(['(uncategorized)']);
+  check('only (uncategorized) checked → category IS NULL alone', /category IS NULL/.test(D.where()) && !/IN \(/.test(D.where()), D.where());
+  D.activeCats=new Set(['Home Occupation Class 2','(uncategorized)']);
+  check('subset + (uncategorized) → (IN … OR IS NULL) branch', /\(category IN \('Home Occupation Class 2'\) OR category IS NULL\)/.test(D.where()), D.where());
+  await D.apply(); await new Promise(r=>setTimeout(r,30));
+  check('IS NULL branch reaches the count query (60,000 + 32,471)', D.total===92471, D.total);
+  D.initCats(); D.renderCats(); await D.apply(); await new Promise(r=>setTimeout(r,30));
+
+  // dp choropleth metrics
+  check('dp shade-by options are ppy/dti/apr', el('choro-metric').options.map(o=>o.value).join(',')==='ppy,dti,apr', el('choro-metric').options.map(o=>o.value));
+  check('dp community approval rate = appr ÷ decided (not ÷ n)', Math.abs(D.stats.comms[0].apr-(3600/3750))<1e-9, D.stats.comms[0].apr);
+  { const ysp=(+D.val('f-y2'))-(+D.val('f-y1'))+1;
+    check('dp ppy uses the dp year span (1979–2026 → 48)', ysp===48 && Math.abs(D.stats.comms[0].ppy-4002/48)<1e-9, {ysp, ppy:D.stats.comms[0].ppy}); }
+  D.setChoroMetric('dti');
+  check('dp metric switch → days-to-decision legend', /days to decision/i.test(el('map-legend').innerHTML), el('map-legend').innerHTML.slice(0,110));
+  D.setChoroMetric('apr');
+  check('dp metric switch → approval-rate legend + URL metric=apr', /approval rate/i.test(el('map-legend').innerHTML) && /[?&]metric=apr/.test(global.location._last), [el('map-legend').innerHTML.slice(0,80), global.location._last]);
+  D.setChoroMetric('cost');
+  check('bp-only metric key rejected under dp', D.choroMetric==='apr', D.choroMetric);
+  D.setChoroMetric('ppy');
+
+  // dp detail mode via community drill
+  el('f-comm').value='BELTLINE'; await D.apply(); await new Promise(r=>setTimeout(r,30));
+  check('dp detail mode via community drill', D.mode==='detail' && D.total===4002, [D.mode, D.total]);
+  check('dp undecided/reversed rows get dti=null, never 0', D.allRows.filter(d=>d.dti==null).length===489 && !D.allRows.some(d=>d.dti===0), D.allRows.filter(d=>d.dti==null).length);
+  check('dp days-to-decision histogram excludes null-dti rows', D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0)===3513, D.charts.dtih.data.datasets[0].data.reduce((a,b)=>a+b,0));
+  check('dp null categories load as (uncategorized) rows', D.rows.filter(d=>d.cls==='(uncategorized)').length===1001, D.rows.filter(d=>d.cls==='(uncategorized)').length);
+  check('dp detail approval rate from rows (3,557 ÷ 4,002 → 89%)', el('k-comp').textContent==='89%', el('k-comp').textContent);
+  check('dp median-days label in detail', el('k-dti-l').textContent==='Median days to decision', el('k-dti-l').textContent);
+  check('dp table shows Decision, Land use, Applicant columns', />Decision</.test(el('tbl').innerHTML) && />Land use</.test(el('tbl').innerHTML) && />Applicant</.test(el('tbl').innerHTML), el('tbl').innerHTML.slice(0,120));
+  check('dp table drops cost/contractor columns', !/Est\. Cost/.test(el('tbl').innerHTML) && !/>Contractor</.test(el('tbl').innerHTML));
+  check('dp SDAB-appeal insight appears (41 hearings in scope)', /<b>41<\/b>/.test(el('insights').innerHTML) && /Appeal Board/.test(el('insights').innerHTML), el('insights').innerHTML.slice(0,300));
+  { const dpF=fetchLog.length;
+    el('f-q').value='cc-x'; D.onSearch();
+    check('dp search matches land-use district client-side, no request', D.rows.length===2001 && fetchLog.length===dpF, [D.rows.length, fetchLog.length-dpF]);
+    el('f-q').value=''; D.onSearch(); }
+
+  // dp compare metrics
+  el('f-comm').value=''; await D.apply(); await new Promise(r=>setTimeout(r,30));
+  D.cmpSel=['BELTLINE','HARVEST HILLS']; D.renderCmpChips(); await D.cmpRun();
+  check('dp compare rows: approval + discretionary share, no cost', /Approval rate/.test(el('cmp-table').innerHTML) && /Discretionary share/.test(el('cmp-table').innerHTML) && !/Total est\. cost/.test(el('cmp-table').innerHTML), el('cmp-table').innerHTML.slice(0,140));
+  check('dp compare days-to-decision = dsum ÷ dcnt', Math.abs(D.cmpData['BELTLINE'].dti-(46000/980))<1e-9, D.cmpData['BELTLINE'].dti);
+  check('dp compare approval = appr ÷ (appr+refn)', Math.abs(D.cmpData['BELTLINE'].apr-(850/885))<1e-9, D.cmpData['BELTLINE'].apr);
+  D.cmpClear();
+
+  // toggle back: bp fully restored, dp option lists cached
+  const catsFetches=dpInitCats();
+  el('f-status').value='Released';                                   // one more piece of dataset-scoped state to shed
+  await D.setDataset('bp'); await new Promise(r=>setTimeout(r,30));
+  check('toggle back to bp restores totals', D.dsKey==='bp' && D.total===490787, [D.dsKey, D.total]);
+  check('bp KPI labels restored', el('k-cost-l').textContent==='Total est. cost' && el('k-units-l').textContent==='Housing units' && el('k-comp-l').textContent==='Completion rate', [el('k-cost-l').textContent,el('k-units-l').textContent,el('k-comp-l').textContent]);
+  check('bp URL drops ds and stale dp params', global.location._last==='/', global.location._last);
+  check('bp status filter reset on the way back', el('f-status').value==='all', el('f-status').value);
+  check('bp charts rebuilt with the cost line + units axis', D.charts.year.data.datasets.length===2 && D.charts.cum.data.datasets.length===2, [D.charts.year.data.datasets.length, D.charts.cum.data.datasets.length]);
+  check('bp categories restored (all checked)', D.cats.length===2 && D.activeCats.size===2, D.cats&&D.cats.length);
+  check('bp shade-by options restored', el('choro-metric').options.map(o=>o.value).join(',')==='ppy,cost,dti,comp', el('choro-metric').options.map(o=>o.value));
+  await D.setDataset('dp'); await new Promise(r=>setTimeout(r,30));
+  check('toggling back to dp reuses cached option lists (no init refetch)', dpInitCats()===catsFetches && D.total===192471, [dpInitCats(), catsFetches]);
+  await D.setDataset('bp'); await new Promise(r=>setTimeout(r,30));
   delete global.location; delete global.history;
 
   console.log(`\n${passes} passed, ${failures} failed`);
