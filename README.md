@@ -60,7 +60,7 @@ costs, and the renovation-lifecycle analysis.
 browser (needs internet for the live API). To produce the deployable site:
 
 ```bash
-npm run build      # python build.py  ->  dist/ (index.html + _headers, sitemap.xml, robots.txt)
+npm run build      # python3 build.py  ->  dist/ (index.html + _headers, sitemap.xml, robots.txt)
 ```
 
 `build.py` is standard-library Python (no dependencies): it publishes the
