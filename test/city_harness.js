@@ -142,6 +142,7 @@ global.fetch=async(url)=>{
 
 const fs=require('fs'), path=require('path');
 const html=fs.readFileSync(path.join(__dirname,'..','src','city_explorer.html'),'utf8');
+const headers=fs.readFileSync(path.join(__dirname,'..','_headers'),'utf8');
 const scriptMatch=html.match(/<script>([\s\S]*?)<\/script>/);
 if(!scriptMatch){ console.error('FAIL could not extract the inline <script> from src/city_explorer.html — test needs updating'); process.exit(1); }
 const src=scriptMatch[1];
@@ -154,6 +155,8 @@ eval(src+'\nglobalThis.D=D;');
   check('all three CDN assets carry SRI + CORS attributes', (html.match(/integrity="sha384-/g)||[]).length===3 && (html.match(/crossorigin="anonymous"/g)||[]).length===3, {integrity:(html.match(/integrity="sha384-/g)||[]).length, crossorigin:(html.match(/crossorigin="anonymous"/g)||[]).length});
   check('chart.js pinned to its explicit dist file (stable SRI target)', html.includes('chart.js@4.5.1/dist/chart.umd.min.js'), (html.match(/cdn\.jsdelivr[^"]*/)||[])[0]);
   check('head declares the canonical URL', html.includes('<link rel="canonical" href="https://yyc-permits.krevian.com/">'), (html.match(/<link rel="canonical[^>]*>/)||[])[0]);
+  check('map uses the keyless OSM endpoint, not CARTO key-watermarked tiles', html.includes('https://tile.openstreetmap.org/{z}/{x}/{y}.png') && !html.includes('basemaps.cartocdn.com'), (html.match(/https:\/\/[^'" ]+\{z\}[^'" ]+/)||[])[0]);
+  check('CSP permits only the active OSM tile host', headers.includes("img-src 'self' data: https://tile.openstreetmap.org") && !headers.includes('basemaps.cartocdn.com'), (headers.match(/img-src[^;]+/)||[])[0]);
 
   await new Promise(r=>setTimeout(r,50)); // let init's async finish
   console.log('after init: year options:', el('f-y1').options.length, '| communities:', D.communities.length);
