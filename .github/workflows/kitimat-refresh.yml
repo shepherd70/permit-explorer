@@ -1,0 +1,96 @@
+name: Kitimat snapshot refresh
+
+# The Kitimat explorer (dist/kitimat/) is built from a committed snapshot of the
+# District of Kitimat's public permit records, BC Stats' monthly building-permit
+# series, and the District's neighbourhood polygons (see docs/kitimat-scope.md —
+# none of those sources can be queried from the browser). This job refreshes
+# the snapshot weekly: it first smoke-tests every source contract, then
+# re-fetches, rebuilds dist/, runs the offline tests, and — only if the DATA
+# changed — opens (or updates) a pull request for review. A contract failure
+# fails the job, which emails the repo owner, and leaves the site untouched.
+#
+# Requirements: repository setting "Allow GitHub Actions to create and approve
+# pull requests" (Settings → Actions → General → Workflow permissions). PRs
+# opened with GITHUB_TOKEN do not trigger the CI workflow, so this job runs the
+# same build + test steps itself before opening one.
+
+on:
+  schedule:
+    - cron: "23 13 * * 1" # Mondays ~13:23 UTC (~06:23 Pacific)
+  workflow_dispatch: {} # allow manual runs from the Actions tab
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: kitimat-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "20"
+
+      - name: Smoke-test the source contracts (Cloudpermit, BC Stats, Kitimat ArcGIS)
+        run: python3 fetch_kitimat.py --check
+
+      - name: Fetch a fresh snapshot
+        run: python3 fetch_kitimat.py
+
+      - name: Rebuild dist/ with the new snapshot
+        run: python3 build.py
+
+      - name: Run the offline tests against the new snapshot
+        run: npm test
+
+      - name: Detect data changes
+        id: diff
+        run: |
+          if git diff --quiet -- data/kitimat/snapshot.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "snapshot unchanged — nothing to publish"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git --no-pager diff --stat -- data/kitimat/ dist/kitimat/
+          fi
+
+      - name: Open or update the refresh pull request
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH=bot/kitimat-refresh
+          STAMP=$(python3 -c "import json;print(json.load(open('data/kitimat/meta.json'))['fetched_at'][:10])")
+          PERMITS=$(python3 -c "import json;print(json.load(open('data/kitimat/meta.json'))['permits'])")
+          BPER=$(python3 -c "import json;print(json.load(open('data/kitimat/meta.json'))['bper_last_month'])")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add data/kitimat/ dist/kitimat/
+          git commit -m "data(kitimat): refresh snapshot ${STAMP} (${PERMITS} permits; BC Stats to ${BPER})"
+          git push --force origin "$BRANCH"
+          BODY="Weekly refresh of the Kitimat snapshot (\`fetch_kitimat.py\`), rebuilt into \`dist/kitimat/\`.
+
+- Permits in the District's public records: **${PERMITS}**
+- BC Stats series reported through: **${BPER}**
+- Source contracts smoke-tested and offline tests green in this run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+Squash-merge to publish. (PRs opened by the workflow token don't trigger CI; the checks above ran inside the refresh job.)"
+          if gh pr list --head "$BRANCH" --state open --json number --jq 'length' | grep -q '^0$'; then
+            gh pr create --base main --head "$BRANCH" --title "data(kitimat): refresh snapshot ${STAMP}" --body "$BODY"
+          else
+            gh pr edit "$BRANCH" --title "data(kitimat): refresh snapshot ${STAMP}" --body "$BODY"
+          fi

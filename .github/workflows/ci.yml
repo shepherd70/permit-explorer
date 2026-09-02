@@ -35,5 +35,5 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Run test harness
+      - name: Run test harnesses (Calgary + Kitimat, offline) and the Kitimat fetcher unit tests
         run: npm test
