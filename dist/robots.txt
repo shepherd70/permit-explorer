@@ -1,4 +1,4 @@
-# https://yyc-permits.krevian.com/ — City of Calgary building-permit explorer
+# https://yyc-permits.krevian.com/ — City of Calgary building-permit explorer (+ /kitimat/ District of Kitimat)
 # All content is public and crawlable.
 User-agent: *
 Allow: /

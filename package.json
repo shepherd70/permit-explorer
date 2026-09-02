@@ -1,11 +1,15 @@
 {
   "name": "permit-explorer",
   "version": "1.0.0",
-  "description": "A live, single-page tool for exploring City of Calgary building-permit data, served at the site root.",
+  "description": "Live single-page explorers for City of Calgary permit data (site root) and District of Kitimat permit data (/kitimat/, weekly snapshot).",
   "private": true,
   "scripts": {
-    "test": "node test/city_harness.js",
+    "test": "node test/city_harness.js && node test/kitimat_harness.js && python3 test/test_fetch_kitimat.py",
+    "test:calgary": "node test/city_harness.js",
+    "test:kitimat": "node test/kitimat_harness.js && python3 test/test_fetch_kitimat.py",
     "smoke": "node test/smoke.js",
+    "smoke:kitimat": "python3 fetch_kitimat.py --check",
+    "fetch:kitimat": "python3 fetch_kitimat.py",
     "build": "python3 build.py"
   },
   "repository": {

@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kitimat Permit Explorer — building permits &amp; construction activity, District of Kitimat, BC</title>
+<meta name="description" content="Explore the District of Kitimat's issued building permits by neighbourhood, category and processing time, alongside eight years of BC Stats construction-value and dwelling-unit figures.">
+<link rel="canonical" href="https://yyc-permits.krevian.com/kitimat/">
+<meta name="theme-color" content="#0072B2">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%230072B2' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 21h18'/%3E%3Cpath d='M5 21V8l7-4 7 4v13'/%3E%3Cpath d='M9.5 21v-5h5v5'/%3E%3C/svg%3E">
+<script data-init>try{var t=localStorage.getItem('ce-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<style>
+:root{
+  --bg:#f4f6f9; --surface:#ffffff; --surface-2:#f7f9fb; --surface-3:#eef2f6;
+  --border:#e4e8ee; --border-strong:#d3d9e2;
+  --text:#1a2330; --text-2:#586677; --text-3:#8a97a6;
+  --accent:#0072B2; --accent-hover:#015b8f; --accent-weak:#e7f1f9; --on-accent:#ffffff;
+  --pos:#1a7f4b; --neg:#c0392b;
+  --ring:0 0 0 3px rgba(0,114,178,.30);
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 2px 6px rgba(16,24,40,.05);
+  --shadow-lg:0 4px 16px rgba(16,24,40,.10);
+  --r:14px; --r-sm:10px; --r-xs:7px;
+  --maxw:1320px;
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+  --font:'Inter',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#0e1217; --surface:#161c24; --surface-2:#1b232d; --surface-3:#222c38;
+  --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.17);
+  --text:#e7ecf2; --text-2:#9fb0c1; --text-3:#73828f;
+  --accent:#4ea6e6; --accent-hover:#73bcf0; --accent-weak:rgba(78,166,230,.14); --on-accent:#06121d;
+  --pos:#34c27a; --neg:#ef6b5e;
+  --ring:0 0 0 3px rgba(78,166,230,.35);
+  --shadow:0 1px 2px rgba(0,0,0,.30), 0 2px 8px rgba(0,0,0,.35);
+  --shadow-lg:0 8px 28px rgba(0,0,0,.45);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--text);line-height:1.55;font-size:15px;-webkit-font-smoothing:antialiased}
+.tnum{font-variant-numeric:tabular-nums}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 clamp(14px,3vw,28px)}
+a{color:var(--accent)}
+h1,h2,h3{line-height:1.25;letter-spacing:-.01em}
+a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,summary:focus-visible,th:focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-xs)}
+.skip{position:absolute;left:-9999px;top:8px;z-index:200;background:var(--accent);color:var(--on-accent);padding:8px 14px;border-radius:var(--r-sm);font-weight:600}
+.skip:focus{left:12px}
+
+/* masthead */
+.masthead{background:var(--surface);border-bottom:1px solid var(--border)}
+.masthead-inner{display:flex;align-items:center;justify-content:space-between;gap:var(--s4);min-height:58px;padding-top:10px;padding-bottom:10px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--text)}
+.brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:var(--accent-weak);color:var(--accent)}
+.brand-text{display:flex;flex-direction:column;line-height:1.05}
+.brand-text strong{font-size:15px;font-weight:700}
+.brand-text span{font-size:11.5px;color:var(--text-3);letter-spacing:.03em;text-transform:uppercase}
+.masthead-actions{display:flex;align-items:center;gap:var(--s3)}
+.snap{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.snap-dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+.ghost-link{font-size:13px;font-weight:600;color:var(--text-2);text-decoration:none;padding:6px 4px}
+.ghost-link:hover{color:var(--accent)}
+.icon-btn{display:grid;place-items:center;width:38px;height:38px;border-radius:9px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.icon-btn:hover{color:var(--accent);border-color:var(--border-strong)}
+.icon-btn svg{width:18px;height:18px}
+.i-sun{display:none}.i-moon{display:block}
+[data-theme="dark"] .i-sun{display:block}[data-theme="dark"] .i-moon{display:none}
+
+/* hero */
+.hero{padding:clamp(28px,4vw,52px) 0 clamp(18px,2vw,26px)}
+.hero h1{font-size:clamp(27px,4vw,40px);font-weight:700;max-width:24ch}
+.hero .lede{margin-top:14px;font-size:clamp(15px,1.4vw,17px);color:var(--text-2);max-width:66ch}
+.try{margin-top:22px;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.try .try-label{font-size:13px;font-weight:600;color:var(--text-3);margin-right:2px}
+.chip{display:inline-flex;align-items:center;gap:8px;font-family:inherit;font-size:13.5px;font-weight:500;color:var(--text);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:9px 15px;cursor:pointer;box-shadow:var(--shadow);transition:transform .12s,border-color .15s,color .15s}
+.chip:hover{border-color:var(--accent);color:var(--accent);transform:translateY(-1px)}
+.chip svg{width:15px;height:15px;color:var(--accent);flex:none}
+
+/* howto */
+.howto{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);margin:8px 0 var(--s5)}
+.howto>summary{cursor:pointer;list-style:none;padding:16px 20px;display:flex;align-items:center;gap:10px;font-weight:600;font-size:14.5px}
+.howto>summary::-webkit-details-marker{display:none}
+.howto>summary .chev{margin-left:auto;color:var(--text-3);transition:transform .2s}
+.howto[open]>summary .chev{transform:rotate(180deg)}
+.howto>summary .tag{font-size:11px;font-weight:600;color:var(--accent);background:var(--accent-weak);padding:2px 8px;border-radius:999px}
+.howto-body{padding:4px 20px 20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px 28px;border-top:1px solid var(--border)}
+.howto-body h4{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);margin:14px 0 6px}
+.howto-body p{font-size:13.5px;color:var(--text-2);margin-bottom:6px}
+.howto-body ul{margin:2px 0 0 18px;font-size:13px;color:var(--text-2)}
+.howto-body li{margin-bottom:5px}
+.howto-body a{font-weight:600}
+
+/* section banners */
+.section-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:8px 14px;margin:var(--s6) 0 var(--s4)}
+.section-head h2{font-size:20px;font-weight:700}
+.section-head .sub{font-size:13.5px;color:var(--text-2)}
+.section-head .src{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-weak);padding:2px 9px;border-radius:999px}
+
+/* toolbar */
+.toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:var(--s5)}
+.toolbar-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;position:relative}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
+.field select,.field input{font-family:inherit;font-size:13.5px;color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);border-radius:var(--r-xs);padding:8px 10px;min-width:128px;transition:border-color .15s}
+.field select:hover,.field input:hover{border-color:var(--accent)}
+.field select option{background:var(--surface)}
+.field input::placeholder{color:var(--text-3)}
+.field.search{flex:1 1 200px}
+.field.search input{width:100%}
+.btn{font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;border-radius:var(--r-xs);padding:9px 16px;transition:background .15s,border-color .15s,color .15s}
+.btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border-strong)}
+.btn-ghost:hover{color:var(--accent);border-color:var(--accent)}
+.toolbar-meta{margin-left:auto;display:flex;flex-direction:column;align-items:flex-end;gap:4px;text-align:right}
+.count{font-size:13.5px;font-weight:600;color:var(--text)}
+.count .num{color:var(--accent)}
+.cat-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
+.cat-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3);margin-right:4px}
+.catbox{display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--text);background:var(--surface-2);border:1px solid var(--border-strong);border-radius:999px;padding:6px 12px;cursor:pointer;user-select:none;transition:border-color .15s,background .15s,color .15s}
+.catbox:hover{border-color:var(--accent)}
+.catbox:focus-within{box-shadow:var(--ring)}
+.catbox input:focus-visible{box-shadow:none}
+.catbox input{accent-color:var(--accent);width:14px;height:14px;margin:0;cursor:pointer;flex:none}
+.catbox .sw{width:9px;height:9px;border-radius:50%;flex:none}
+.catbox .cat-n{font-size:11.5px;color:var(--text-3);font-variant-numeric:tabular-nums}
+.catbox.off{color:var(--text-3);background:transparent;border-style:dashed}
+.cat-link{font-family:inherit;font-size:12px;font-weight:600;color:var(--text-2);background:transparent;border:1px solid var(--border-strong);border-radius:var(--r-xs);padding:5px 11px;cursor:pointer;transition:color .15s,border-color .15s}
+.cat-link:hover{color:var(--accent);border-color:var(--accent)}
+
+/* states */
+.err{display:none;align-items:flex-start;gap:10px;background:color-mix(in srgb,var(--neg) 12%,var(--surface));border:1px solid color-mix(in srgb,var(--neg) 35%,var(--border));color:var(--neg);border-radius:var(--r);padding:14px 16px;font-size:13.5px;margin-bottom:var(--s5)}
+.err.show{display:flex}
+.note-box{background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-xs);padding:12px 15px;font-size:13.5px;color:var(--text-2);margin-bottom:var(--s5)}
+.note-box b{color:var(--text)}
+
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s4);margin-bottom:var(--s5)}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:18px}
+.kpi .lbl{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
+.kpi .val{font-size:clamp(24px,2.4vw,30px);font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.kpi .note{font-size:12.5px;color:var(--text-2);margin-top:3px}
+
+/* cards */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:20px;position:relative;margin-bottom:var(--s5)}
+.card-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.card-head h3{font-size:15px;font-weight:600}
+.card-head .hint{font-size:12.5px;color:var(--text-3);font-weight:400}
+.grid{display:grid;gap:var(--s5);margin-bottom:var(--s5)}
+.grid.two{grid-template-columns:repeat(2,1fr)}
+.grid.three{grid-template-columns:repeat(3,1fr)}
+.grid .card{margin-bottom:0;min-width:0}
+.ch{position:relative;height:300px}
+.ch.tall{height:350px}
+.empty-chart{position:absolute;inset:0;display:none;align-items:center;justify-content:center;font-size:13px;color:var(--text-3);text-align:center;padding:20px}
+.card.empty .empty-chart{display:flex}
+.card.empty canvas{visibility:hidden}
+
+/* map */
+#map{height:480px;border-radius:var(--r-sm);z-index:0;border:1px solid var(--border)}
+.map-legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-size:12px;color:var(--text-2)}
+.lg-item{display:inline-flex;align-items:center;gap:6px}
+.lg-item i{width:11px;height:11px;border-radius:50%;display:inline-block;flex:none}
+.lg-grad-wrap{display:inline-flex;align-items:center;gap:7px}
+.lg-grad{width:120px;height:11px;border-radius:3px;display:inline-block;border:1px solid var(--border)}
+.lg-grad-lbl{font-variant-numeric:tabular-nums;color:var(--text-2)}
+.lg-muted{color:var(--text-3)}
+
+/* insights */
+.insights{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
+.insight{background:var(--surface-2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-xs);padding:12px 15px;font-size:13.5px;color:var(--text-2)}
+.insight b{color:var(--text);font-weight:600}
+
+/* table */
+.tbl-wrap{overflow-x:auto;min-height:120px;border-radius:var(--r-sm);border:1px solid var(--border)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{position:sticky;top:0;text-align:left;padding:11px 12px;background:var(--surface-2);border-bottom:1px solid var(--border-strong);color:var(--text-3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;cursor:pointer;user-select:none}
+thead th:hover{color:var(--text)}
+thead th.sorted{color:var(--accent)}
+thead th .ar{font-size:9px}
+thead th.th-num{text-align:right}
+tbody td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--text-2)}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:var(--surface-2)}
+td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--text)}
+td.empty-row{text-align:center;padding:28px;color:var(--text-3)}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:var(--surface-3);color:var(--text)}
+.pill i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.pg{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:14px;font-size:13px;color:var(--text-2)}
+.pg .pg-info{font-variant-numeric:tabular-nums}
+.pg button{font-family:inherit;padding:6px 12px;border:1px solid var(--border-strong);border-radius:var(--r-xs);background:var(--surface);color:var(--text);cursor:pointer;font-size:13px;font-weight:500}
+.pg button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.pg button:disabled{opacity:.4;cursor:default}
+
+/* footer */
+footer{border-top:1px solid var(--border);margin-top:var(--s6);padding:28px 0 40px}
+.foot-grid{display:flex;flex-wrap:wrap;gap:18px 40px;justify-content:space-between}
+footer p{font-size:12.5px;color:var(--text-3);max-width:60ch;margin-bottom:6px}
+footer a{font-weight:600}
+footer .foot-meta{font-size:12.5px;color:var(--text-2)}
+
+@media(max-width:920px){.grid.two,.grid.three{grid-template-columns:minmax(0,1fr)}.toolbar-meta{margin-left:0;align-items:flex-start;text-align:left;width:100%}}
+@media(max-width:560px){
+  .hero h1{font-size:26px}
+  #map{height:380px}.ch{height:260px}
+  .masthead-actions .ghost-link,.snap span{display:none}
+  .field,.field.search{flex:1 1 100%}
+  .field select,.field input{width:100%}
+}
+@media print{.toolbar,.masthead,.hero .try,.howto{display:none!important}body{background:#fff}.card,.kpi{box-shadow:none}}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="wrap masthead-inner">
+    <a class="brand" href="#main">
+      <span class="brand-mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V8l7-4 7 4v13"/><path d="M9.5 21v-5h5v5"/></svg></span>
+      <span class="brand-text"><strong>Kitimat Permits</strong><span>Explorer</span></span>
+    </a>
+    <div class="masthead-actions">
+      <span class="snap" title="Built from a weekly snapshot of the District of Kitimat's public permit records and BC Stats"><span class="snap-dot" aria-hidden="true"></span><span>Weekly snapshot</span></span>
+      <a class="ghost-link" href="../" title="City of Calgary building &amp; development permits">Calgary</a>
+      <a class="ghost-link" href="#howto" onclick="var d=document.getElementById('howto');if(d)d.open=true;">How it works</a>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-pressed="false" aria-label="Toggle dark mode" title="Toggle dark mode" onclick="toggleTheme()">
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <section class="hero">
+    <h1>Explore Kitimat's building permits and construction activity</h1>
+    <p class="lede">A free, public tool for the District of Kitimat, BC: eight years of monthly construction value and dwelling units from BC Stats, and every building permit the District has issued through its public records since December 2025 — by neighbourhood, category and processing time.</p>
+    <div class="try">
+      <span class="try-label">Try asking:</span>
+      <button class="chip" type="button" onclick="K.example('neighbourhoods')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 12-9 12s-9-5-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Which neighbourhoods are building?</button>
+      <button class="chip" type="button" onclick="K.example('speed')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>How long do permits take?</button>
+      <button class="chip" type="button" onclick="K.example('boom')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>What did the LNG boom look like?</button>
+    </div>
+  </section>
+
+  <details class="howto" id="howto">
+    <summary><span class="tag">About</span> How this works, where the data comes from &amp; what it cannot show <span class="chev" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></summary>
+    <div class="howto-body">
+      <div>
+        <h4>Two sources, two time bases</h4>
+        <p><b>Construction activity since 2018</b> comes from BC Stats' monthly <i>Building Permits</i> release: the dollar value of permits issued in Kitimat by building type, and the number of dwelling units authorised. It is city-wide only — no addresses or individual permits.</p>
+        <p><b>Permits issued since December 2025</b> come from the District of Kitimat's public permit records (Cloudpermit), which began when the District moved permitting online. Each record has a permit number, address, category, dates and a map location. The District's neighbourhood boundaries and parcel zoning come from its public map server.</p>
+        <h4>A snapshot, not a live query</h4>
+        <p>Neither the District's records nor its map server can be queried from a web page directly, so this page is rebuilt from a fresh copy about once a week. The date of the copy is in the footer.</p>
+      </div>
+      <div>
+        <h4>What the numbers mean</h4>
+        <ul>
+          <li><b>Days to issue</b> = issue date − the date the permit file was opened in the District's system. It is not a formal "application received" date; read it as processing time, not queue time.</li>
+          <li><b>Neighbourhood</b> is assigned by the permit's map location. Kitimat's industrial lands (the LNG sites, the Ocelot Road industrial park) sit outside all eight residential neighbourhoods and are grouped as <b>Outside neighbourhoods</b>.</li>
+          <li><b>OCP zone</b> is the Official Community Plan zone of the permit's parcel (R = residential, C = commercial, M = industrial, G = greenbelt), where the parcel could be matched.</li>
+          <li>BC Stats suppresses months with too few permits to protect confidentiality; those appear as <b>gaps</b>, and yearly totals say how many months they include. A methodology change makes pre-2018 figures non-comparable, so they are not shown.</li>
+        </ul>
+        <h4>What this page cannot show</h4>
+        <p>The District publishes no construction value, contractor, dwelling-unit count or status history per permit, no development (planning) permits, and no permit-level records before December 2025. Everything here is limited accordingly — it is a small window, growing weekly.</p>
+        <h4>Sources</h4>
+        <p><a href="https://ca.cloudpermit.com/kitimat/public-records" target="_blank" rel="noopener">District of Kitimat public permit records</a> · <a href="https://catalogue.data.gov.bc.ca/dataset/building-permits-bper-" target="_blank" rel="noopener">BC Stats, Building Permits (BPER)</a> (Open Government Licence – BC) · <a href="https://map.kitimat.ca/server/rest/services" target="_blank" rel="noopener">District of Kitimat map server</a>. Independent project, not affiliated with the District of Kitimat or the Province of BC.</p>
+      </div>
+    </div>
+  </details>
+
+  <div class="err" id="err" role="alert"><span id="err-msg"></span></div>
+
+  <!-- ===================== Pane A: BC Stats ===================== -->
+  <div class="section-head" id="sec-activity">
+    <h2>Construction activity since 2018</h2>
+    <span class="src">BC Stats, monthly</span>
+    <span class="sub">city-wide value of permits issued and dwelling units authorised — <span id="bper-range">…</span></span>
+  </div>
+  <section class="kpis" aria-label="Construction activity headline figures">
+    <div class="kpi"><div class="lbl">Permit value since 2018</div><div class="val" id="b-total">–</div><div class="note" id="b-total-n"></div></div>
+    <div class="kpi"><div class="lbl">Dwelling units since 2018</div><div class="val" id="b-units">–</div><div class="note" id="b-units-n"></div></div>
+    <div class="kpi"><div class="lbl">Peak year</div><div class="val" id="b-peak">–</div><div class="note" id="b-peak-n"></div></div>
+    <div class="kpi"><div class="lbl">Latest month reported</div><div class="val" id="b-latest">–</div><div class="note" id="b-latest-n"></div></div>
+  </section>
+  <section class="card" id="card-byear">
+    <div class="card-head"><h3>Permit value by year and building type</h3><span class="hint">— sum of reported months; hover a year to see how many months it includes</span></div>
+    <div class="ch tall"><canvas id="c-byear" role="img" aria-label="Permit value by year, stacked by building type"></canvas></div>
+  </section>
+  <section class="grid two">
+    <div class="card"><div class="card-head"><h3>Monthly permit value</h3><span class="hint">— gaps are suppressed or not-yet-reported months</span></div><div class="ch"><canvas id="c-bmonth" role="img" aria-label="Monthly permit value"></canvas></div></div>
+    <div class="card"><div class="card-head"><h3>Dwelling units authorised by year</h3><span class="hint">— single-detached, row and apartment units</span></div><div class="ch"><canvas id="c-bunits" role="img" aria-label="Dwelling units authorised by year and type"></canvas></div></div>
+  </section>
+
+  <!-- ===================== Pane B: Cloudpermit ===================== -->
+  <div class="section-head" id="sec-permits">
+    <h2>Permits issued since December 2025</h2>
+    <span class="src">District public records</span>
+    <span class="sub">every issued building permit in the District's online records — <span id="cp-range">…</span></span>
+  </div>
+
+  <section class="toolbar" id="toolbar" aria-label="Filters">
+    <div class="toolbar-row">
+      <div class="field"><label for="f-nbh">Neighbourhood</label><select id="f-nbh" onchange="K.setFilter('nbh',this.value)"><option value="">All neighbourhoods</option></select></div>
+      <div class="field"><label for="f-year">Year issued</label><select id="f-year" onchange="K.setFilter('year',this.value)"><option value="">All years</option></select></div>
+      <div class="field search"><label for="f-q">Search</label><input id="f-q" type="search" placeholder="address, permit number, zone…" oninput="K.setFilter('q',this.value)" autocomplete="off"></div>
+      <button class="btn btn-ghost" type="button" onclick="K.reset()">Reset</button>
+      <div class="toolbar-meta" aria-live="polite">
+        <span class="count"><span class="num" id="cnt">–</span> permits in view</span>
+      </div>
+    </div>
+    <div class="cat-row" id="cat-row"><span class="cat-label">Category</span><span id="cat-list"></span><button class="cat-link" type="button" onclick="K.allCats(true)">All</button><button class="cat-link" type="button" onclick="K.allCats(false)">None</button></div>
+  </section>
+
+  <section class="kpis" aria-label="Permit headline figures">
+    <div class="kpi"><div class="lbl">Permits issued</div><div class="val" id="k-count">–</div><div class="note" id="k-count-n"></div></div>
+    <div class="kpi"><div class="lbl">Median days to issue</div><div class="val" id="k-dti">–</div><div class="note" id="k-dti-n"></div></div>
+    <div class="kpi"><div class="lbl">Residential share</div><div class="val" id="k-res">–</div><div class="note" id="k-res-n"></div></div>
+    <div class="kpi"><div class="lbl">In a neighbourhood</div><div class="val" id="k-nbh">–</div><div class="note" id="k-nbh-n"></div></div>
+  </section>
+
+  <section class="card" id="card-map">
+    <div class="card-head"><h3>Where permits are</h3><span class="hint">— neighbourhoods shaded by permit count; click one to filter</span></div>
+    <div id="map" role="region" aria-label="Map of permits by neighbourhood"></div>
+    <div class="map-legend" id="map-legend"></div>
+  </section>
+
+  <section class="grid three">
+    <div class="card" id="card-cat"><div class="card-head"><h3>What gets permitted</h3><span class="hint">— by category</span></div><div class="ch"><canvas id="c-cat" role="img" aria-label="Permits by category"></canvas></div><div class="empty-chart">No permits match the current filters.</div></div>
+    <div class="card" id="card-month"><div class="card-head"><h3>Permits issued by month</h3></div><div class="ch"><canvas id="c-month" role="img" aria-label="Permits issued by month"></canvas></div><div class="empty-chart">No permits match the current filters.</div></div>
+    <div class="card" id="card-dtih"><div class="card-head"><h3>Days-to-issue distribution</h3><span class="hint" id="dtih-hint"></span></div><div class="ch"><canvas id="c-dtih" role="img" aria-label="Distribution of days to issue"></canvas></div><div class="empty-chart">No permits match the current filters.</div></div>
+  </section>
+
+  <section class="grid two">
+    <div class="card" id="card-nbh"><div class="card-head"><h3>Permits by neighbourhood</h3><span class="hint">— for the current categories and year</span></div><div class="ch"><canvas id="c-nbh" role="img" aria-label="Permits by neighbourhood"></canvas></div><div class="empty-chart">No permits match the current filters.</div></div>
+    <div class="card" id="card-zone"><div class="card-head"><h3>Parcel zoning (OCP)</h3><span class="hint" id="zone-hint"></span></div><div class="ch"><canvas id="c-zone" role="img" aria-label="Permits by OCP zone of the parcel"></canvas></div><div class="empty-chart">No matched parcels in the current filters.</div></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h3>Auto-computed insights</h3><span class="hint">— recalculated for the current filter; small counts are called out as such</span></div>
+    <div class="insights" id="insights"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h3>Permit records</h3><span class="hint">— click a column header to sort</span>
+      <button id="export-btn" class="btn btn-ghost" type="button" style="margin-left:auto" onclick="K.exportCsv()" title="Download the permits in the current filter as a CSV file">Export CSV</button>
+    </div>
+    <div class="tbl-wrap" id="tbl"></div>
+    <div class="pg">
+      <span class="pg-info" id="pg-info"></span>
+      <button id="pg-prev" aria-label="Previous page" onclick="K.page(-1)">&larr; Prev</button>
+      <button id="pg-next" aria-label="Next page" onclick="K.page(1)">Next &rarr;</button>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div>
+      <p><b style="color:var(--text-2)">Data:</b> <a href="https://ca.cloudpermit.com/kitimat/public-records" target="_blank" rel="noopener">District of Kitimat public permit records</a> (via Cloudpermit); <a href="https://catalogue.data.gov.bc.ca/dataset/building-permits-bper-" target="_blank" rel="noopener">BC Stats, Building Permits (BPER)</a>, Open Government Licence – British Columbia; neighbourhood boundaries and parcel zoning from the <a href="https://map.kitimat.ca/server/rest/services" target="_blank" rel="noopener">District of Kitimat map server</a>. Map tiles &copy; OpenStreetMap &amp; CARTO.</p>
+      <p>Independent, non-commercial project. Not affiliated with or endorsed by the District of Kitimat, BC Stats or the Province of British Columbia. A companion to the <a href="../">Calgary permit explorer</a>.</p>
+    </div>
+    <div class="foot-meta">Data snapshot: <span id="last-updated" class="tnum">…</span></div>
+  </div>
+</footer>
+
+<!-- build.py replaces the two JSON blocks below with the committed snapshot (data/kitimat/). Left as null in src/,
+     the page falls back to fetching ../data/kitimat/*.json, so it also works served from the repo root. -->
+<script type="application/json" id="snapshot">null</script>
+<script type="application/json" id="snapshot-meta">null</script>
+
+<script>
+const C = {blue:'#0072B2',amber:'#E69F00',green:'#009E73',red:'#D55E00',pink:'#CC79A7',sky:'#56B4E9',purple:'#6A4C93',gray:'#8C8C8C'};
+const COLORS = [C.blue,C.amber,C.green,C.red,C.pink,C.sky,C.purple,C.gray,'#117733','#88CCEE'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// Fixed colours for the District's categories so the map, chips and charts agree; unlisted categories cycle COLORS.
+const CAT_COLORS = {'Residential building':C.blue,'Industrial building':C.amber,'Commercial building':C.green,'Demolition':C.red,'Plumbing':C.purple,'Uncategorized':C.gray};
+const SECTORS = [['residential','Residential',C.blue],['commercial','Commercial',C.green],['industrial','Industrial',C.amber],['instigov','Institutional & government',C.purple]];
+const UNIT_TYPES = [['units_single','Single-detached',C.blue],['units_row','Row',C.sky],['units_apartment','Apartment',C.purple]];
+const DTI_BINS=[{l:'0–7 d',max:7},{l:'8–14 d',max:14},{l:'15–30 d',max:30},{l:'31–60 d',max:60},{l:'61–90 d',max:90},{l:'90+ d',max:Infinity}];
+const MIN_N = 5;                                  // below this, medians/shares are shown with an explicit small-count caveat
+const PAGE_SIZE = 25;
+const OUTSIDE = 'Outside neighbourhoods';
+
+const fmt$ = v => v==null||isNaN(v)?'—':(Math.abs(v)>=1e9?'$'+(v/1e9).toFixed(2)+'B':Math.abs(v)>=1e6?'$'+(v/1e6).toFixed(1)+'M':Math.abs(v)>=1e3?'$'+(v/1e3).toFixed(0)+'K':'$'+Math.round(v).toLocaleString());
+const fmtN = v => v==null||isNaN(v)?'—':Math.round(v).toLocaleString();
+const fmtPct = (a,b) => b?Math.round(a/b*100)+'%':'—';
+const median = a => {if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;};
+const binCounts=(vals,bins)=>{const out=bins.map(()=>0);vals.forEach(v=>{for(let i=0;i<bins.length;i++){if(v<=bins[i].max){out[i]++;break;}}});return out;};
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const monthLabel = m => { const [y,mm]=m.split('-'); return MONTHS[+mm-1]+' '+y; };
+const catColor = (c,i) => CAT_COLORS[c] || COLORS[(i||0)%COLORS.length];
+
+function isDark(){ try{ return document.documentElement.getAttribute('data-theme')==='dark'; }catch(e){ return false; } }
+function tileUrl(){ return isDark()?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png':'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'; }
+function applyChartDefaults(){
+  if(typeof Chart==='undefined'||!Chart.defaults) return;
+  const dark=isDark();
+  Chart.defaults.font.family="Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  Chart.defaults.font.size=12;
+  Chart.defaults.color = dark?'#9fb0c1':'#586677';
+  Chart.defaults.borderColor = dark?'rgba(255,255,255,.08)':'rgba(15,23,42,.07)';
+  Chart.defaults.plugins.legend.labels.usePointStyle=true;
+  Chart.defaults.plugins.legend.labels.boxWidth=8;
+  Chart.defaults.plugins.legend.labels.padding=12;
+  const tt=Chart.defaults.plugins.tooltip;
+  tt.backgroundColor=dark?'#0b0f14':'#1a2330'; tt.titleColor='#fff'; tt.bodyColor=dark?'#cfd9e3':'#e7ecf2';
+  tt.borderColor='rgba(255,255,255,.12)'; tt.borderWidth=1; tt.padding=10; tt.cornerRadius=8; tt.boxPadding=4; tt.usePointStyle=true;
+}
+
+// --- pure helpers over the snapshot (exported on K for the harness) --------------
+// BC Stats series: [{m:'2018-01', v:<dollars|null>, x:<suppressed>}] → per-year rollup.
+function rollupYears(series){
+  const out={};
+  series.forEach(p=>{ const y=p.m.slice(0,4); const o=out[y]||(out[y]={year:y,sum:0,n:0,x:0,blank:0});
+    if(p.v!=null){o.sum+=p.v;o.n++;} else if(p.x){o.x++;} else {o.blank++;} });
+  return Object.values(out).sort((a,b)=>a.year<b.year?-1:1);
+}
+const sumReported = series => series.reduce((s,p)=>s+(p.v||0),0);
+const countReported = series => series.filter(p=>p.v!=null).length;
+const lastReported = series => { for(let i=series.length-1;i>=0;i--) if(series[i].v!=null) return series[i]; return null; };
+
+const K = {
+  snap:null, meta:null, rows:[], charts:{}, map:null, mapLayers:null, nbhLayer:null,
+  f:{nbh:'',year:'',q:'',cats:new Set()}, allCatNames:[], sortCol:'issued', sortDir:'desc', pageNum:0,
+
+  // ---------- boot ----------
+  async init(){
+    let snap=null, meta=null;
+    try{ snap=this.readJsonBlock('snapshot'); meta=this.readJsonBlock('snapshot-meta'); }catch(e){ this.fail('The embedded data block is corrupt: '+e.message); return; }
+    if(!snap){
+      // src/ dev fallback (served from the repo root): the unbuilt page fetches the committed snapshot
+      try{
+        const r=await fetch('../data/kitimat/snapshot.json'); if(!r.ok) throw new Error('HTTP '+r.status);
+        snap=await r.json();
+        try{ const m=await fetch('../data/kitimat/meta.json'); if(m.ok) meta=await m.json(); }catch(e){}
+      }catch(e){ this.fail('Could not load the Kitimat data snapshot ('+e.message+'). Run python3 fetch_kitimat.py, then python3 build.py, and open dist/kitimat/index.html.'); return; }
+    }
+    this.load(snap, meta);
+  },
+  readJsonBlock(id){ const el=document.getElementById(id); const t=el&&(el.textContent||''); return t.trim()?JSON.parse(t):null; },
+  fail(msg){ const e=document.getElementById('err'), m=document.getElementById('err-msg'); if(m) m.textContent=msg; if(e&&e.classList) e.classList.add('show'); },
+
+  load(snap, meta){
+    this.snap=snap; this.meta=meta||null;
+    this.rows=(snap.permits||[]).map(p=>Object.assign({}, p, {
+      yearIssued: p.issued?p.issued.slice(0,4):null,
+      monthIssued: p.issued?p.issued.slice(0,7):null,
+      dti: (p.days!=null && p.days>=0) ? p.days : null,            // negative = data error → excluded, as in the Calgary explorer
+    }));
+    this.allCatNames=[...new Set(this.rows.map(r=>r.category))].sort((a,b)=>this.rows.filter(r=>r.category===b).length-this.rows.filter(r=>r.category===a).length);
+    this.f.cats=new Set(this.allCatNames);
+    this.fillSelects();
+    this.readURL();
+    this.renderBper();
+    this.initMap();
+    this.render();
+    const lu=document.getElementById('last-updated'); if(lu) lu.textContent = this.meta&&this.meta.fetched_at ? this.meta.fetched_at.slice(0,10) : 'unknown';
+    const tb=document.getElementById('theme-toggle'); if(tb&&tb.setAttribute) tb.setAttribute('aria-pressed', isDark()?'true':'false');
+  },
+  fillSelects(){
+    const nb=document.getElementById('f-nbh');
+    (this.snap.neighbourhood_names||[]).forEach(n=>{ const o=new Option(n,n); nb.add(o); });
+    const yr=document.getElementById('f-year');
+    [...new Set(this.rows.map(r=>r.yearIssued).filter(Boolean))].sort().forEach(y=>yr.add(new Option(y,y)));
+    const dates=this.rows.map(r=>r.issued).filter(Boolean).sort();
+    const cr=document.getElementById('cp-range'); if(cr) cr.textContent = dates.length? `${fmtN(this.rows.length)} permits, issued ${dates[0]} to ${dates[dates.length-1]}` : 'no permits';
+  },
+
+  // ---------- filters & URL state ----------
+  setFilter(k,v){ this.f[k]=v; this.pageNum=0; this.render(); this.writeURL(); },
+  toggleCat(name){ if(this.f.cats.has(name)) this.f.cats.delete(name); else this.f.cats.add(name); this.pageNum=0; this.render(); this.writeURL(); },
+  allCats(on){ this.f.cats = on? new Set(this.allCatNames) : new Set(); this.pageNum=0; this.render(); this.writeURL(); },
+  reset(){ this.f={nbh:'',year:'',q:'',cats:new Set(this.allCatNames)}; this.pageNum=0;
+    const a=document.getElementById('f-nbh'), b=document.getElementById('f-year'), c=document.getElementById('f-q'); if(a)a.value=''; if(b)b.value=''; if(c)c.value='';
+    this.render(); this.writeURL(); },
+  readURL(){
+    if(typeof location==='undefined' || typeof URLSearchParams==='undefined') return;
+    let p; try{ p=new URLSearchParams(location.search); }catch(e){ return; }
+    const nbh=p.get('nbh'); if(nbh && (this.snap.neighbourhood_names||[]).includes(nbh)){ this.f.nbh=nbh; const el=document.getElementById('f-nbh'); if(el) el.value=nbh; }
+    const yr=p.get('year'); if(yr && /^\d{4}$/.test(yr)){ this.f.year=yr; const el=document.getElementById('f-year'); if(el) el.value=yr; }
+    const q=p.get('q'); if(q){ this.f.q=q; const el=document.getElementById('f-q'); if(el) el.value=q; }
+    const cat=p.get('cat'); if(cat!=null){ const want=cat.split(',').filter(c=>this.allCatNames.includes(c)); this.f.cats=new Set(want); }
+  },
+  writeURL(){
+    if(typeof location==='undefined' || typeof history==='undefined' || !history.replaceState || typeof URLSearchParams==='undefined') return;
+    const p=new URLSearchParams();
+    if(this.f.nbh) p.set('nbh',this.f.nbh);
+    if(this.f.year) p.set('year',this.f.year);
+    if(this.f.q) p.set('q',this.f.q);
+    if(this.f.cats.size!==this.allCatNames.length) p.set('cat',[...this.f.cats].join(','));
+    const qs=p.toString();
+    try{ history.replaceState(null,'', location.pathname+(qs?('?'+qs):'')+(location.hash||'')); }catch(e){}
+  },
+  filtered(){
+    const q=this.f.q.trim().toLowerCase();
+    return this.rows.filter(r=>
+      (!this.f.nbh || r.neighbourhood===this.f.nbh) &&
+      (!this.f.year || r.yearIssued===this.f.year) &&
+      this.f.cats.has(r.category) &&
+      (!q || [r.address,r.permit,r.zone,r.category,r.neighbourhood].some(v=>v&&String(v).toLowerCase().includes(q)))
+    );
+  },
+  example(which){
+    if(which==='neighbourhoods'){ this.reset(); this.scrollTo('card-map'); }
+    else if(which==='speed'){ this.reset(); this.scrollTo('card-dtih'); }
+    else if(which==='boom'){ this.scrollTo('card-byear'); }
+  },
+  scrollTo(id){ const el=document.getElementById(id); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'start'}); },
+
+  // ---------- Pane A: BC Stats ----------
+  bperStats(){
+    const S=this.snap.bper.series, total=S.total, units=S.units_total, years=rollupYears(total);
+    const peak=years.reduce((b,y)=>!b||y.sum>b.sum?y:b,null);
+    return { years, peak, totalSum:sumReported(total), totalN:countReported(total), months:total.length,
+      unitsSum:sumReported(units), unitsN:countReported(units), last:lastReported(total) };
+  },
+  renderBper(){
+    const b=this.snap.bper, S=b.series, st=this.bperStats(), set=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+    set('bper-range', `${monthLabel(b.first)} to ${monthLabel(b.last)}`);
+    set('b-total', fmt$(st.totalSum)); set('b-total-n', `${st.totalN} of ${st.months} months reported (the rest suppressed or pending)`);
+    set('b-units', fmtN(st.unitsSum)); set('b-units-n', `${st.unitsN} of ${st.months} months reported`);
+    set('b-peak', st.peak?st.peak.year:'—'); set('b-peak-n', st.peak?`${fmt$(st.peak.sum)} across ${st.peak.n} reported months`:'');
+    set('b-latest', st.last?monthLabel(st.last.m):'—'); set('b-latest-n', st.last?`${fmt$(st.last.v)} in permits issued`:'');
+
+    const yrs=st.years.map(y=>y.year);
+    const byYear=key=>{ const r=rollupYears(S[key]); const m={}; r.forEach(y=>m[y.year]=y.sum); return yrs.map(y=>m[y]||0); };
+    const totalRows=st.years;
+    this.chart('c-byear',{type:'bar',data:{labels:yrs,datasets:SECTORS.map(([k,l,col])=>({label:l,data:byYear(k),backgroundColor:col,stack:'v',borderRadius:2}))},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{callback:v=>fmt$(v)}}},
+        plugins:{tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${fmt$(c.parsed.y)}`,
+          footer:items=>{ const y=totalRows[items[0].dataIndex]; return `${y.n} of ${y.n+y.x+y.blank} months reported`+(y.x?` (${y.x} suppressed)`:'')+(y.blank?` (${y.blank} pending)`:''); }}}}}});
+    this.chart('c-bmonth',{type:'line',data:{labels:S.total.map(p=>monthLabel(p.m)),datasets:[{label:'Total permit value',data:S.total.map(p=>p.v),borderColor:C.blue,backgroundColor:C.blue,pointRadius:2,tension:.2,spanGaps:false}]},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        scales:{x:{ticks:{maxTicksLimit:9,maxRotation:0},grid:{display:false}},y:{ticks:{callback:v=>fmt$(v)},beginAtZero:true}},
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{ const p=S.total[c.dataIndex]; return p.v==null?(p.x?' suppressed':' not yet reported'):' '+fmt$(p.v); }}}}}});
+    this.chart('c-bunits',{type:'bar',data:{labels:yrs,datasets:UNIT_TYPES.map(([k,l,col])=>({label:l,data:byYear(k),backgroundColor:col,stack:'u',borderRadius:2}))},
+      options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        scales:{x:{stacked:true,grid:{display:false}},y:{stacked:true,ticks:{precision:0},beginAtZero:true}},
+        plugins:{tooltip:{callbacks:{footer:items=>{ const r=rollupYears(S.units_total).find(y=>y.year===items[0].label); return r?`${r.n} of ${r.n+r.x+r.blank} months reported`:''; }}}}}});
+  },
+
+  // ---------- Pane B: permits ----------
+  stats(rows){
+    const cats={}, nbh={}, months={}, zones={};
+    rows.forEach(r=>{ cats[r.category]=(cats[r.category]||0)+1; nbh[r.neighbourhood]=(nbh[r.neighbourhood]||0)+1;
+      if(r.monthIssued) months[r.monthIssued]=(months[r.monthIssued]||0)+1; if(r.zone) zones[r.zone]=(zones[r.zone]||0)+1; });
+    const dtis=rows.map(r=>r.dti).filter(v=>v!=null);
+    const res=rows.filter(r=>r.category==='Residential building').length;
+    const inside=rows.filter(r=>r.neighbourhood!==OUTSIDE).length;
+    const byCat={}; rows.forEach(r=>{ if(r.dti!=null)(byCat[r.category]||(byCat[r.category]=[])).push(r.dti); });
+    return { n:rows.length, cats:Object.entries(cats).sort((a,b)=>b[1]-a[1]), nbh:Object.entries(nbh).sort((a,b)=>b[1]-a[1]),
+      months:Object.entries(months).sort(), zones:Object.entries(zones).sort((a,b)=>b[1]-a[1]), dtis, medDti:median(dtis), res, inside,
+      catMedians:Object.entries(byCat).map(([c,v])=>({c,n:v.length,med:median(v)})).filter(x=>x.n>=MIN_N).sort((a,b)=>a.med-b.med) };
+  },
+  render(){
+    const rows=this.filtered(), s=this.stats(rows); this.cur={rows,s};
+    const set=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+    set('cnt', fmtN(s.n));
+    set('k-count', fmtN(s.n)); set('k-count-n', s.n? `of ${fmtN(this.rows.length)} in the public records` : 'nothing matches these filters');
+    set('k-dti', s.medDti==null?'—':`${Math.round(s.medDti)} d`); set('k-dti-n', s.dtis.length? `${s.dtis.length<MIN_N?'small count — ':''}${fmtN(s.dtis.length)} permits with valid dates` : 'no dated permits in view');
+    set('k-res', fmtPct(s.res,s.n)); set('k-res-n', `${fmtN(s.res)} residential building permits`);
+    set('k-nbh', fmtPct(s.inside,s.n)); set('k-nbh-n', `${fmtN(s.n-s.inside)} on industrial lands outside neighbourhoods`);
+    this.renderCats(s);
+    this.renderCharts(s);
+    this.renderMap(rows,s);
+    this.renderInsights(s);
+    this.renderTable(rows);
+  },
+  renderCats(s){
+    const all={}; this.rows.forEach(r=>all[r.category]=(all[r.category]||0)+1);
+    const el=document.getElementById('cat-list'); if(!el) return;
+    el.innerHTML=this.allCatNames.map((c,i)=>{ const on=this.f.cats.has(c);
+      return `<label class="catbox${on?'':' off'}"><input type="checkbox" ${on?'checked':''} onchange="K.toggleCat('${esc(c).replace(/'/g,'&#39;')}')"><i class="sw" style="background:${catColor(c,i)}"></i>${esc(c)} <span class="cat-n">${fmtN(all[c])}</span></label>`; }).join('');
+  },
+  chart(id,cfg){
+    if(this.charts[id]){ try{ this.charts[id].destroy(); }catch(e){} }
+    const el=document.getElementById(id); if(!el||typeof Chart==='undefined') return;
+    this.charts[id]=new Chart(el,cfg);
+  },
+  setEmpty(cardId,isEmpty){ const c=document.getElementById(cardId); if(c&&c.classList) c.classList.toggle('empty',!!isEmpty); },
+  renderCharts(s){
+    const base={responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}};
+    this.setEmpty('card-cat',!s.n);
+    this.chart('c-cat',{type:'bar',data:{labels:s.cats.map(x=>x[0]),datasets:[{data:s.cats.map(x=>x[1]),backgroundColor:s.cats.map((x,i)=>catColor(x[0],this.allCatNames.indexOf(x[0]))),borderRadius:3}]},
+      options:{...base,indexAxis:'y',scales:{x:{ticks:{precision:0},beginAtZero:true},y:{grid:{display:false}}}}});
+    // months: fill the full issued range so quiet months show as zeros rather than vanishing
+    const allMonths=[...new Set(this.rows.map(r=>r.monthIssued).filter(Boolean))].sort();
+    const mm={}; s.months.forEach(([m,n])=>mm[m]=n);
+    this.setEmpty('card-month',!s.n);
+    this.chart('c-month',{type:'bar',data:{labels:allMonths.map(monthLabel),datasets:[{data:allMonths.map(m=>mm[m]||0),backgroundColor:C.blue,borderRadius:3}]},
+      options:{...base,scales:{x:{grid:{display:false},ticks:{maxRotation:0,autoSkip:true}},y:{ticks:{precision:0},beginAtZero:true}}}});
+    const dh=document.getElementById('dtih-hint'); if(dh) dh.textContent = s.dtis.length? `— ${fmtN(s.dtis.length)} permits; median ${Math.round(s.medDti)} days` : '';
+    this.setEmpty('card-dtih',!s.dtis.length);
+    this.chart('c-dtih',{type:'bar',data:{labels:DTI_BINS.map(b=>b.l),datasets:[{data:binCounts(s.dtis,DTI_BINS),backgroundColor:C.green,borderRadius:3}]},
+      options:{...base,scales:{x:{grid:{display:false}},y:{ticks:{precision:0},beginAtZero:true}}}});
+    const names=(this.snap.neighbourhood_names||[]); const nm={}; s.nbh.forEach(([k,v])=>nm[k]=v);
+    this.setEmpty('card-nbh',!s.n);
+    this.chart('c-nbh',{type:'bar',data:{labels:names,datasets:[{data:names.map(n=>nm[n]||0),backgroundColor:names.map(n=>n===OUTSIDE?C.amber:C.blue),borderRadius:3}]},
+      options:{...base,indexAxis:'y',scales:{x:{ticks:{precision:0},beginAtZero:true},y:{grid:{display:false}}}}});
+    const matched=s.zones.reduce((a,z)=>a+z[1],0);
+    const zh=document.getElementById('zone-hint'); if(zh) zh.textContent = s.n? `— ${fmtN(matched)} of ${fmtN(s.n)} permits matched to a parcel` : '';
+    this.setEmpty('card-zone',!matched);
+    const top=s.zones.slice(0,10);
+    const zoneColor=z=>/^R/.test(z)?C.blue:/^C/.test(z)?C.green:/^M/.test(z)?C.amber:/^G/.test(z)?C.pink:C.gray;
+    this.chart('c-zone',{type:'bar',data:{labels:top.map(z=>z[0]),datasets:[{data:top.map(z=>z[1]),backgroundColor:top.map(z=>zoneColor(z[0])),borderRadius:3}]},
+      options:{...base,indexAxis:'y',scales:{x:{ticks:{precision:0},beginAtZero:true},y:{grid:{display:false}}}}});
+  },
+
+  // ---------- map ----------
+  initMap(){
+    if(typeof L==='undefined' || !document.getElementById('map')) return;
+    this.map=L.map('map',{scrollWheelZoom:false}).setView([54.045,-128.66],12);
+    this.tiles=L.tileLayer(tileUrl(),{maxZoom:18,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'}).addTo(this.map);
+    this.mapLayers=L.layerGroup().addTo(this.map);
+  },
+  shade(n,max){ // 0 → hollow; otherwise a 4-step ramp on the accent
+    if(!n) return {fillColor:'transparent',fillOpacity:0,color:isDark()?'#73828f':'#8a97a6',weight:1,dashArray:'4 3'};
+    const t=max>0?n/max:0, steps=['#cfe3f2','#9cc7e5','#5aa4d6','#0072B2']; const col=steps[Math.min(3,Math.floor(t*3.999))];
+    return {fillColor:col,fillOpacity:isDark()?.45:.55,color:isDark()?'#cfd9e3':'#1a2330',weight:1};
+  },
+  renderMap(rows,s){
+    const legend=document.getElementById('map-legend');
+    const nm={}; s.nbh.forEach(([k,v])=>nm[k]=v); const max=Math.max(0,...s.nbh.filter(x=>x[0]!==OUTSIDE).map(x=>x[1]));
+    if(legend) legend.innerHTML = `<span class="lg-grad-wrap"><span class="lg-grad-lbl">0</span><i class="lg-grad" style="background:linear-gradient(90deg,#cfe3f2,#0072B2)"></i><span class="lg-grad-lbl">${fmtN(max)}</span><span class="lg-muted">permits per neighbourhood</span></span>`
+      + this.allCatNames.map((c,i)=>`<span class="lg-item"><i style="background:${catColor(c,i)}"></i>${esc(c)}</span>`).join('')
+      + `<span class="lg-item lg-muted">${fmtN(nm[OUTSIDE]||0)} permits outside all neighbourhoods (industrial lands) are plotted but not shaded</span>`;
+    if(!this.map) return;
+    this.mapLayers.clearLayers();
+    if(this.nbhLayer){ try{ this.map.removeLayer(this.nbhLayer); }catch(e){} }
+    const self=this;
+    this.nbhLayer=L.geoJSON(this.snap.neighbourhoods,{
+      style:f=>self.shade(nm[f.properties.name]||0,max),
+      onEachFeature:(f,layer)=>{ const n=f.properties.name;
+        layer.bindPopup(`<b>${esc(n)}</b><br>${fmtN(nm[n]||0)} permits in view`);
+        if(layer.on) layer.on('click',()=>{ const el=document.getElementById('f-nbh'); if(el) el.value = self.f.nbh===n?'':n; self.setFilter('nbh', self.f.nbh===n?'':n); }); }
+    }).addTo(this.map);
+    rows.forEach(r=>{ if(r.lat==null||r.lon==null) return;
+      L.circleMarker([r.lat,r.lon],{radius:6,color:'#fff',weight:1,fillColor:catColor(r.category,this.allCatNames.indexOf(r.category)),fillOpacity:.9})
+        .bindPopup(`<b>${esc(r.permit)}</b><br>${esc(r.address||'—')}<br>${esc(r.category)}${r.zone?' · zone '+esc(r.zone):''}<br>${esc(r.neighbourhood)}<br>Opened ${r.created||'—'} · issued ${r.issued||'—'}${r.dti!=null?' ('+r.dti+' d)':''}`)
+        .addTo(this.mapLayers); });
+  },
+  syncMap(){ if(this.map&&this.tiles&&this.tiles.setUrl) this.tiles.setUrl(tileUrl()); if(this.cur) this.renderMap(this.cur.rows,this.cur.s); },
+  syncCharts(){ applyChartDefaults(); this.renderBper(); if(this.cur) this.renderCharts(this.cur.s); },
+
+  // ---------- insights ----------
+  renderInsights(s){
+    const out=[], small=s.n<MIN_N;
+    if(!s.n){ out.push('No permits match these filters — widen the category, year or neighbourhood selection.'); }
+    else{
+      if(small) out.push(`Only <b>${fmtN(s.n)}</b> permit${s.n===1?'':'s'} in view — read the figures below as examples, not patterns.`);
+      const top=s.cats[0]; if(top) out.push(`Most common category: <b>${esc(top[0])}</b> — <b>${fmtN(top[1])}</b> of ${fmtN(s.n)} permits (${fmtPct(top[1],s.n)}).`);
+      const inside=s.nbh.filter(x=>x[0]!==OUTSIDE)[0]; if(inside) out.push(`Busiest neighbourhood: <b>${esc(inside[0])}</b> with <b>${fmtN(inside[1])}</b> permits.`);
+      const outN=s.n-s.inside; if(outN) out.push(`<b>${fmtN(outN)}</b> permits (${fmtPct(outN,s.n)}) are on industrial lands outside the eight neighbourhoods — the LNG sites and the Ocelot Road industrial park.`);
+      if(s.dtis.length>=MIN_N){ out.push(`Median time to issue: <b>${Math.round(s.medDti)} days</b> across ${fmtN(s.dtis.length)} permits; the slowest took <b>${fmtN(Math.max(...s.dtis))}</b> days.`);
+        if(s.catMedians.length>=2){ const f=s.catMedians[0], sl=s.catMedians[s.catMedians.length-1]; out.push(`Fastest category: <b>${esc(f.c)}</b> (median ${Math.round(f.med)} d, n=${f.n}); slowest: <b>${esc(sl.c)}</b> (median ${Math.round(sl.med)} d, n=${sl.n}).`); } }
+      const z=s.zones[0]; if(z) out.push(`Most common parcel zone: <b>${esc(z[0])}</b> (${fmtN(z[1])} permits).`);
+      const bm=s.months.slice().sort((a,b)=>b[1]-a[1])[0]; if(bm&&s.months.length>1) out.push(`Busiest month: <b>${monthLabel(bm[0])}</b> with <b>${fmtN(bm[1])}</b> permits issued.`);
+    }
+    const st=this.bperStats(); if(st.peak) out.push(`BC Stats: <b>${st.peak.year}</b> was the peak year for permit value at <b>${fmt$(st.peak.sum)}</b> — the LNG Canada construction era.`);
+    const el=document.getElementById('insights'); if(el) el.innerHTML=out.map(t=>`<div class="insight">${t}</div>`).join('');
+    this.insightCount=out.length;
+  },
+
+  // ---------- table ----------
+  cols:[{k:'permit',l:'Permit'},{k:'address',l:'Address'},{k:'neighbourhood',l:'Neighbourhood'},{k:'category',l:'Category'},{k:'zone',l:'Zone'},{k:'created',l:'Opened'},{k:'issued',l:'Issued'},{k:'dti',l:'Days',num:true}],
+  sort(col){ if(this.sortCol===col) this.sortDir=this.sortDir==='asc'?'desc':'asc'; else { this.sortCol=col; this.sortDir=col==='dti'?'desc':'asc'; } this.pageNum=0; this.renderTable(this.cur?this.cur.rows:this.filtered()); },
+  page(d){ this.pageNum+=d; this.renderTable(this.cur?this.cur.rows:this.filtered()); },
+  sorted(rows){
+    const sc=this.sortCol, dir=this.sortDir==='asc'?1:-1;
+    return [...rows].sort((a,b)=>{ let x=a[sc],y=b[sc]; if(x==null)return 1; if(y==null)return -1;
+      if(typeof x==='string'){x=x.toLowerCase();y=String(y).toLowerCase();} return x<y?-dir:x>y?dir:0; });
+  },
+  renderTable(rows){
+    const sorted=this.sorted(rows);
+    const np=Math.max(1,Math.ceil(sorted.length/PAGE_SIZE)); this.pageNum=Math.min(Math.max(0,this.pageNum),np-1);
+    const pageRows=sorted.slice(this.pageNum*PAGE_SIZE,(this.pageNum+1)*PAGE_SIZE);
+    const head='<thead><tr>'+this.cols.map(c=>`<th class="${c.num?'th-num ':''}${this.sortCol===c.k?'sorted':''}" tabindex="0" role="button" aria-sort="${this.sortCol===c.k?(this.sortDir==='asc'?'ascending':'descending'):'none'}" onclick="K.sort('${c.k}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();K.sort('${c.k}')}">${c.l}${this.sortCol===c.k?` <span class="ar">${this.sortDir==='asc'?'▲':'▼'}</span>`:''}</th>`).join('')+'</tr></thead>';
+    const body='<tbody>'+(pageRows.length? pageRows.map(r=>'<tr>'+this.cols.map(c=>{
+      if(c.k==='category') return `<td><span class="pill"><i style="background:${catColor(r.category,this.allCatNames.indexOf(r.category))}"></i>${esc(r.category)}</span></td>`;
+      if(c.num) return `<td class="num">${r[c.k]==null?'—':fmtN(r[c.k])}</td>`;
+      return `<td>${esc(r[c.k]==null?'—':r[c.k])}</td>`; }).join('')+'</tr>').join('')
+      : `<tr><td class="empty-row" colspan="${this.cols.length}">No permits match the current filters.</td></tr>`)+'</tbody>';
+    const t=document.getElementById('tbl'); if(t) t.innerHTML=`<table>${head}${body}</table>`;
+    const info=document.getElementById('pg-info'); if(info) info.textContent = sorted.length? `${fmtN(this.pageNum*PAGE_SIZE+1)}–${fmtN(Math.min(sorted.length,(this.pageNum+1)*PAGE_SIZE))} of ${fmtN(sorted.length)}` : '0 of 0';
+    const pv=document.getElementById('pg-prev'), nx=document.getElementById('pg-next'); if(pv) pv.disabled=this.pageNum<=0; if(nx) nx.disabled=this.pageNum>=np-1;
+    const ex=document.getElementById('export-btn'); if(ex) ex.disabled=!sorted.length;
+  },
+
+  // ---------- CSV export ----------
+  csvCell(v){
+    if(v==null)v=''; v=String(v);
+    if(/^[=+\-@\t\r]/.test(v) && !/^-?\d+(\.\d+)?$/.test(v)) v="'"+v;   // neutralize spreadsheet formulas in free text; plain numbers stay numeric
+    return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  },
+  csvText(rows){
+    const cols=[['permit','Permit'],['address','Address'],['neighbourhood','Neighbourhood'],['category','Category'],['zone','OCP zone'],['created','Opened'],['issued','Issued'],['dti','Days to issue'],['lat','Latitude'],['lon','Longitude'],['pid','PID']];
+    const head=cols.map(c=>this.csvCell(c[1])).join(',');
+    const body=this.sorted(rows).map(r=>cols.map(c=>this.csvCell(r[c[0]])).join(',')).join('\r\n');
+    return head+'\r\n'+body;
+  },
+  exportCsv(){
+    const rows=this.cur?this.cur.rows:this.filtered(); if(!rows.length) return;
+    const stamp=new Date().toISOString().slice(0,10);
+    const blob=new Blob([this.csvText(rows)],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=`kitimat-building-permits-${stamp}.csv`; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ try{URL.revokeObjectURL(url);}catch(e){} a.remove(); },0);
+  }
+};
+
+function toggleTheme(){
+  const next = isDark()?'light':'dark';
+  document.documentElement.setAttribute('data-theme',next);
+  try{ localStorage.setItem('ce-theme',next); }catch(e){}
+  const b=document.getElementById('theme-toggle'); if(b) b.setAttribute('aria-pressed', next==='dark'?'true':'false');
+  K.syncCharts(); K.syncMap();
+}
+
+applyChartDefaults();
+K.init();
+</script>
+</body>
+</html>

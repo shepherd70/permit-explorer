@@ -6,7 +6,8 @@
 A live, single-page tool for exploring City of Calgary permit data — all 490K+
 building permits and 190K+ development permits across every community, queried
 from Calgary's open-data API in your browser. One self-contained static HTML
-file, no backend, served at the site root.
+file, no backend, served at the site root. A companion page at `/kitimat/`
+covers the District of Kitimat, BC from a weekly data snapshot.
 
 **Live at <https://yyc-permits.krevian.com/>.**
 
@@ -54,25 +55,62 @@ under 30,000 permits (a community, or one year city-wide) and it switches to
 **detail view** — individual permits on the map, the records table, median
 costs, and the renovation-lifecycle analysis.
 
+### Kitimat companion page (`/kitimat/`)
+
+A second, smaller explorer for the **District of Kitimat, BC** lives at
+[`/kitimat/`](https://yyc-permits.krevian.com/kitimat/) (`src/kitimat_explorer.html`).
+Kitimat publishes no open-data permit feed, so the page is built from a
+**weekly snapshot** of three public sources (scoped in
+[`docs/kitimat-scope.md`](docs/kitimat-scope.md)):
+
+- **Construction activity since 2018** — BC Stats' monthly *Building Permits
+  (BPER)* release for census subdivision 5949005: permit value by building type
+  and dwelling units by type, with suppressed months kept as gaps and yearly
+  totals labelled by months reported
+- **Permits issued since December 2025** — every issued building permit in the
+  District's public records (Cloudpermit): permit number, address, category,
+  opened/issued dates and map location; joined at build time to the District's
+  eight neighbourhood polygons (point-in-polygon; industrial lands fall
+  "outside neighbourhoods") and to parcel OCP zoning by PID
+- Filters (neighbourhood, year, category, search), KPIs, category / month /
+  days-to-issue / neighbourhood / zoning charts, a neighbourhood choropleth with
+  permit points, insights with small-count caveats, a sortable table, URL state
+  and CSV export — no per-permit cost, contractor, units or status exist in the
+  source, and the page says so
+
 ## Run / build
 
 `src/city_explorer.html` is a self-contained static file — open it directly in a
 browser (needs internet for the live API). To produce the deployable site:
 
 ```bash
-npm run build      # python3 build.py  ->  dist/ (index.html + _headers, sitemap.xml, robots.txt)
+npm run build      # python3 build.py  ->  dist/ (index.html, kitimat/index.html + _headers, sitemap.xml, robots.txt)
 ```
 
 `build.py` is standard-library Python (no dependencies): it publishes the
-explorer as `dist/index.html` so it serves at the site root, and copies the
-root-level deploy files — the Cloudflare [`_headers`](_headers), [`sitemap.xml`](sitemap.xml),
-and [`robots.txt`](robots.txt) — into `dist/` alongside it (anything that must be
+explorer as `dist/index.html` so it serves at the site root, embeds the committed
+Kitimat snapshot (`data/kitimat/`) into `src/kitimat_explorer.html` and writes it
+as `dist/kitimat/index.html`, and copies the root-level deploy files — the
+Cloudflare [`_headers`](_headers), [`sitemap.xml`](sitemap.xml), and
+[`robots.txt`](robots.txt) — into `dist/` alongside them (anything that must be
 reachable at `/` has to be in `dist/`, since Cloudflare Pages serves that directory).
+
+The Kitimat snapshot is refreshed by `fetch_kitimat.py` (standard library only):
+
+```bash
+npm run smoke:kitimat   # python3 fetch_kitimat.py --check  — contract smoke test of the three sources
+npm run fetch:kitimat   # python3 fetch_kitimat.py          — rewrite data/kitimat/snapshot.json + meta.json
+```
+
+Served from the repo root (e.g. `python3 -m http.server`), the unbuilt
+`src/kitimat_explorer.html` falls back to fetching `data/kitimat/*.json`, so it
+works without a build too.
 
 ## Hosting
 
-Deployed on **Cloudflare Pages** (Git integration). The explorer is the site
-root (`index.html`); there is no second page or second URL.
+Deployed on **Cloudflare Pages** (Git integration). The Calgary explorer is the
+site root (`index.html`); the Kitimat page is served from the `/kitimat/`
+directory of the same deploy.
 
 **Canonical domain:** the page declares
 `<link rel="canonical" href="https://yyc-permits.krevian.com/">`, matching
@@ -110,8 +148,17 @@ pagination, URL state, and the request-race guard. It exits non-zero on any
 failed assertion.
 
 ```bash
-npm test           # node test/city_harness.js
+npm test           # Calgary harness + Kitimat harness + Kitimat fetcher unit tests (all offline)
+npm run test:calgary
+npm run test:kitimat
 ```
+
+The Kitimat page has its own harness (`test/kitimat_harness.js`, 71 checks)
+that injects the **committed** snapshot into the page's JSON block and asserts
+KPIs, BC Stats rollups (suppressed months as gaps), charts, the map (shaded
+polygons, one marker per permit, click-to-filter), every filter, sorting,
+pagination, CSV and dark mode; `test/test_fetch_kitimat.py` unit-tests the
+fetcher's CSV parser, normaliser, point-in-polygon and polygon simplifier.
 
 CI (`.github/workflows/ci.yml`) runs the build and the harness on every push and
 pull request, and fails if the committed `dist/` has drifted from a fresh build.
@@ -128,6 +175,13 @@ dataset's endpoint, field list and head query from the `DATASETS` registry in
 (`.github/workflows/smoke.yml`) runs it daily and on demand, emailing on
 failure.
 
+The Kitimat sources are checked the same way by `python3 fetch_kitimat.py --check`
+(`npm run smoke:kitimat`). A weekly workflow
+(`.github/workflows/kitimat-refresh.yml`) runs that check, re-fetches the
+snapshot, rebuilds `dist/`, runs `npm test`, and — only when the data changed —
+opens or updates a `bot/kitimat-refresh` pull request for review (it needs the
+repository setting *Allow GitHub Actions to create and approve pull requests*).
+
 ## Data & attribution
 
 Permit data comes from City of Calgary Open Data —
@@ -136,6 +190,16 @@ and [Development Permits (6933-unw5)](https://data.calgary.ca/Business-and-Econo
 subject to the City's Open Data Terms of Use. This is an independent project, not
 affiliated with or endorsed by The City of Calgary.
 
+Kitimat data comes from the
+[District of Kitimat's public permit records](https://ca.cloudpermit.com/kitimat/public-records)
+(via Cloudpermit), BC Stats'
+[Building Permits (BPER)](https://catalogue.data.gov.bc.ca/dataset/building-permits-bper-)
+release under the Open Government Licence – British Columbia, and neighbourhood
+boundaries and parcel zoning from the
+[District of Kitimat map server](https://map.kitimat.ca/server/rest/services).
+Not affiliated with or endorsed by the District of Kitimat, BC Stats or the
+Province of British Columbia.
+
 ## License
 
 [MIT](LICENSE).
@@ -143,17 +207,22 @@ affiliated with or endorsed by The City of Calgary.
 ## Project layout
 
 ```
-build.py                publishes src/city_explorer.html as dist/ (+ passthrough deploy files)
-src/city_explorer.html  the explorer (self-contained HTML/CSS/JS; no framework)
+build.py                publishes src/city_explorer.html as dist/, embeds the Kitimat snapshot into dist/kitimat/ (+ passthrough deploy files)
+fetch_kitimat.py        builds data/kitimat/ from Cloudpermit, BC Stats and the Kitimat ArcGIS server (--check = contract smoke)
+src/city_explorer.html  the Calgary explorer (self-contained HTML/CSS/JS; no framework)
+src/kitimat_explorer.html  the Kitimat companion page (same design system; reads the embedded snapshot)
 src/m0_validate.py      standalone dev utility: probes Calgary open-data feeds for freshness/schema
-dist/                   deployable output (index.html + _headers, sitemap.xml, robots.txt); served at the site root
+data/kitimat/           committed weekly snapshot (snapshot.json: permits, BC Stats series, neighbourhood polygons; meta.json)
+dist/                   deployable output (index.html, kitimat/index.html + _headers, sitemap.xml, robots.txt); served at the site root
 _headers                Cloudflare security headers + CSP
 sitemap.xml, robots.txt SEO files, published to the deploy root by build.py
-test/city_harness.js    headless verification harness
-test/smoke.js           live-API smoke test
-package.json            npm scripts (test / smoke / build); no dependencies
-docs/                   design briefs, audit reports, and project documentation
-.github/workflows/      CI (tests + dist-drift gate) and the daily live-API smoke test
+test/city_harness.js    headless verification harness (Calgary)
+test/kitimat_harness.js headless verification harness (Kitimat, against the committed snapshot)
+test/test_fetch_kitimat.py  unit tests for the Kitimat fetcher's parsers and geometry helpers
+test/smoke.js           live-API smoke test (Calgary)
+package.json            npm scripts (test / smoke / fetch / build); no dependencies
+docs/                   design briefs, scope documents, audit reports, and project documentation
+.github/workflows/      CI (tests + dist-drift gate), the daily live-API smoke test, and the weekly Kitimat snapshot refresh
 .github/dependabot.yml  weekly GitHub Actions version updates
 TASKS.md                development task tracker
 ```
