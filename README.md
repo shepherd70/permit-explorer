@@ -72,11 +72,14 @@ Kitimat publishes no open-data permit feed, so the page is built from a
   opened/issued dates and map location; joined at build time to the District's
   eight neighbourhood polygons (point-in-polygon; industrial lands fall
   "outside neighbourhoods") and to parcel OCP zoning by PID
-- Filters (neighbourhood, year, category, search), KPIs, category / month /
-  days-to-issue / neighbourhood / zoning charts, a neighbourhood choropleth with
-  permit points, insights with small-count caveats, a sortable table, URL state
-  and CSV export — no per-permit cost, contractor, units or status exist in the
-  source, and the page says so
+- A **global year range** (from / to, sticky toolbar, URL `from=`/`to=`) that
+  drives every figure on the page — the BC Stats KPIs and charts recompute for
+  the selected years and the permit records filter to permits issued in them;
+  neighbourhood, category and search filters apply to the permit records
+- KPIs, category / month / days-to-issue / neighbourhood / zoning charts, a
+  neighbourhood choropleth with permit points, insights with small-count
+  caveats, a sortable table and CSV export — no per-permit cost, contractor,
+  units or status exist in the source, and the page says so
 
 ## Run / build
 

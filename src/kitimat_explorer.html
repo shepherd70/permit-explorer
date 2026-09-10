@@ -102,6 +102,9 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,su
 
 /* toolbar */
 .toolbar{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:var(--s5)}
+@media(min-width:920px){.toolbar{position:sticky;top:0;z-index:60;border-radius:0 0 var(--r) var(--r);border-top:none;box-shadow:var(--shadow-lg)}}
+.toolbar-note{font-size:12.5px;color:var(--text-3);margin-top:10px}
+.scope{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-weak);padding:2px 10px;border-radius:999px}
 .toolbar-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:12px;position:relative}
 .field{display:flex;flex-direction:column;gap:5px;min-width:0}
 .field label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-3)}
@@ -274,15 +277,31 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
   <div class="err" id="err" role="alert"><span id="err-msg"></span></div>
 
+  <section class="toolbar" id="toolbar" aria-label="Filters">
+    <div class="toolbar-row">
+      <div class="field"><label for="f-y0">From year</label><select id="f-y0" onchange="K.setYears(this.value,null)"></select></div>
+      <div class="field"><label for="f-y1">To year</label><select id="f-y1" onchange="K.setYears(null,this.value)"></select></div>
+      <div class="field"><label for="f-nbh">Neighbourhood</label><select id="f-nbh" onchange="K.setFilter('nbh',this.value)"><option value="">All neighbourhoods</option></select></div>
+      <div class="field search"><label for="f-q">Search permits</label><input id="f-q" type="search" placeholder="address, permit number, zone…" oninput="K.setFilter('q',this.value)" autocomplete="off"></div>
+      <button class="btn btn-ghost" type="button" onclick="K.reset()">Reset</button>
+      <div class="toolbar-meta" aria-live="polite">
+        <span class="count"><span class="num" id="cnt">–</span> permits in view</span>
+        <span class="scope" id="yr-scope">–</span>
+      </div>
+    </div>
+    <div class="cat-row" id="cat-row"><span class="cat-label">Category</span><span id="cat-list"></span><button class="cat-link" type="button" onclick="K.allCats(true)">All</button><button class="cat-link" type="button" onclick="K.allCats(false)">None</button></div>
+    <p class="toolbar-note">The year range drives every chart and figure on the page. Neighbourhood, category and search apply to the permit records, which begin in December 2025.</p>
+  </section>
+
   <!-- ===================== Pane A: BC Stats ===================== -->
   <div class="section-head" id="sec-activity">
-    <h2>Construction activity since 2018</h2>
+    <h2 id="sec-a-title">Construction activity since 2018</h2>
     <span class="src">BC Stats, monthly</span>
     <span class="sub">city-wide value of permits issued and dwelling units authorised — <span id="bper-range">…</span></span>
   </div>
   <section class="kpis" aria-label="Construction activity headline figures">
-    <div class="kpi"><div class="lbl">Permit value since 2018</div><div class="val" id="b-total">–</div><div class="note" id="b-total-n"></div></div>
-    <div class="kpi"><div class="lbl">Dwelling units since 2018</div><div class="val" id="b-units">–</div><div class="note" id="b-units-n"></div></div>
+    <div class="kpi"><div class="lbl" id="b-total-l">Permit value since 2018</div><div class="val" id="b-total">–</div><div class="note" id="b-total-n"></div></div>
+    <div class="kpi"><div class="lbl" id="b-units-l">Dwelling units since 2018</div><div class="val" id="b-units">–</div><div class="note" id="b-units-n"></div></div>
     <div class="kpi"><div class="lbl">Peak year</div><div class="val" id="b-peak">–</div><div class="note" id="b-peak-n"></div></div>
     <div class="kpi"><div class="lbl">Latest month reported</div><div class="val" id="b-latest">–</div><div class="note" id="b-latest-n"></div></div>
   </section>
@@ -297,23 +316,10 @@ footer .foot-meta{font-size:12.5px;color:var(--text-2)}
 
   <!-- ===================== Pane B: Cloudpermit ===================== -->
   <div class="section-head" id="sec-permits">
-    <h2>Permits issued since December 2025</h2>
+    <h2 id="sec-b-title">Permits issued since December 2025</h2>
     <span class="src">District public records</span>
     <span class="sub">every issued building permit in the District's online records — <span id="cp-range">…</span></span>
   </div>
-
-  <section class="toolbar" id="toolbar" aria-label="Filters">
-    <div class="toolbar-row">
-      <div class="field"><label for="f-nbh">Neighbourhood</label><select id="f-nbh" onchange="K.setFilter('nbh',this.value)"><option value="">All neighbourhoods</option></select></div>
-      <div class="field"><label for="f-year">Year issued</label><select id="f-year" onchange="K.setFilter('year',this.value)"><option value="">All years</option></select></div>
-      <div class="field search"><label for="f-q">Search</label><input id="f-q" type="search" placeholder="address, permit number, zone…" oninput="K.setFilter('q',this.value)" autocomplete="off"></div>
-      <button class="btn btn-ghost" type="button" onclick="K.reset()">Reset</button>
-      <div class="toolbar-meta" aria-live="polite">
-        <span class="count"><span class="num" id="cnt">–</span> permits in view</span>
-      </div>
-    </div>
-    <div class="cat-row" id="cat-row"><span class="cat-label">Category</span><span id="cat-list"></span><button class="cat-link" type="button" onclick="K.allCats(true)">All</button><button class="cat-link" type="button" onclick="K.allCats(false)">None</button></div>
-  </section>
 
   <section class="kpis" aria-label="Permit headline figures">
     <div class="kpi"><div class="lbl">Permits issued</div><div class="val" id="k-count">–</div><div class="note" id="k-count-n"></div></div>
@@ -426,7 +432,7 @@ const lastReported = series => { for(let i=series.length-1;i>=0;i--) if(series[i
 
 const K = {
   snap:null, meta:null, rows:[], charts:{}, map:null, mapLayers:null, nbhLayer:null,
-  f:{nbh:'',year:'',q:'',cats:new Set()}, allCatNames:[], sortCol:'issued', sortDir:'desc', pageNum:0,
+  f:{y0:null,y1:null,nbh:'',q:'',cats:new Set()}, years:[], allCatNames:[], sortCol:'issued', sortDir:'desc', pageNum:0,
 
   // ---------- boot ----------
   async init(){
@@ -454,9 +460,11 @@ const K = {
     }));
     this.allCatNames=[...new Set(this.rows.map(r=>r.category))].sort((a,b)=>this.rows.filter(r=>r.category===b).length-this.rows.filter(r=>r.category===a).length);
     this.f.cats=new Set(this.allCatNames);
+    // one year axis for the whole page: BC Stats' first year → the later of BC Stats' last year and the newest permit
+    const y0=+snap.bper.first.slice(0,4), y1=Math.max(+snap.bper.last.slice(0,4), ...this.rows.map(r=>+r.yearIssued||0));
+    this.years=[]; for(let y=y0;y<=y1;y++) this.years.push(String(y));
     this.fillSelects();
     this.readURL();
-    this.renderBper();
     this.initMap();
     this.render();
     const lu=document.getElementById('last-updated'); if(lu) lu.textContent = this.meta&&this.meta.fetched_at ? this.meta.fetched_at.slice(0,10) : 'unknown';
@@ -465,24 +473,47 @@ const K = {
   fillSelects(){
     const nb=document.getElementById('f-nbh');
     (this.snap.neighbourhood_names||[]).forEach(n=>{ const o=new Option(n,n); nb.add(o); });
-    const yr=document.getElementById('f-year');
-    [...new Set(this.rows.map(r=>r.yearIssued).filter(Boolean))].sort().forEach(y=>yr.add(new Option(y,y)));
+    const y0=document.getElementById('f-y0'), y1=document.getElementById('f-y1');
+    this.years.forEach(y=>{ y0.add(new Option(y,y)); y1.add(new Option(y,y)); });
+    y0.value=this.years[0]; y1.value=this.years[this.years.length-1];
     const dates=this.rows.map(r=>r.issued).filter(Boolean).sort();
     const cr=document.getElementById('cp-range'); if(cr) cr.textContent = dates.length? `${fmtN(this.rows.length)} permits, issued ${dates[0]} to ${dates[dates.length-1]}` : 'no permits';
   },
 
   // ---------- filters & URL state ----------
   setFilter(k,v){ this.f[k]=v; this.pageNum=0; this.render(); this.writeURL(); },
+  // Year range — the one filter that drives BOTH panes. null = the axis end; a reversed range snaps the other end.
+  setYears(a,b){
+    const lo=this.years[0], hi=this.years[this.years.length-1];
+    if(a!=null&&a!==''){ this.f.y0 = this.years.includes(String(a)) ? String(a) : null; }
+    if(b!=null&&b!==''){ this.f.y1 = this.years.includes(String(b)) ? String(b) : null; }
+    let [y0,y1]=this.yearRange();
+    if(y0>y1){ if(a!=null&&a!=='') this.f.y1=y0; else this.f.y0=y1; [y0,y1]=this.yearRange(); }
+    if(this.f.y0===lo) this.f.y0=null; if(this.f.y1===hi) this.f.y1=null;
+    const e0=document.getElementById('f-y0'), e1=document.getElementById('f-y1'); if(e0) e0.value=y0; if(e1) e1.value=y1;
+    this.pageNum=0; this.render(); this.writeURL();
+  },
+  yearRange(){ return [this.f.y0||this.years[0], this.f.y1||this.years[this.years.length-1]]; },
+  inRange(y){ if(!y) return false; const [a,b]=this.yearRange(); return y>=a && y<=b; },
+  isFullRange(){ return !this.f.y0 && !this.f.y1; },
+  rangeLabel(){ const [a,b]=this.yearRange(); return a===b?a:`${a}–${b}`; },
   toggleCat(name){ if(this.f.cats.has(name)) this.f.cats.delete(name); else this.f.cats.add(name); this.pageNum=0; this.render(); this.writeURL(); },
   allCats(on){ this.f.cats = on? new Set(this.allCatNames) : new Set(); this.pageNum=0; this.render(); this.writeURL(); },
-  reset(){ this.f={nbh:'',year:'',q:'',cats:new Set(this.allCatNames)}; this.pageNum=0;
-    const a=document.getElementById('f-nbh'), b=document.getElementById('f-year'), c=document.getElementById('f-q'); if(a)a.value=''; if(b)b.value=''; if(c)c.value='';
+  reset(){ this.f={y0:null,y1:null,nbh:'',q:'',cats:new Set(this.allCatNames)}; this.pageNum=0;
+    const a=document.getElementById('f-nbh'), c=document.getElementById('f-q'), e0=document.getElementById('f-y0'), e1=document.getElementById('f-y1');
+    if(a)a.value=''; if(c)c.value=''; if(e0)e0.value=this.years[0]; if(e1)e1.value=this.years[this.years.length-1];
     this.render(); this.writeURL(); },
   readURL(){
     if(typeof location==='undefined' || typeof URLSearchParams==='undefined') return;
     let p; try{ p=new URLSearchParams(location.search); }catch(e){ return; }
     const nbh=p.get('nbh'); if(nbh && (this.snap.neighbourhood_names||[]).includes(nbh)){ this.f.nbh=nbh; const el=document.getElementById('f-nbh'); if(el) el.value=nbh; }
-    const yr=p.get('year'); if(yr && /^\d{4}$/.test(yr)){ this.f.year=yr; const el=document.getElementById('f-year'); if(el) el.value=yr; }
+    const from=p.get('from')||p.get('year'), to=p.get('to')||p.get('year');   // `year=` = the legacy single-year form
+    if((from&&this.years.includes(from))||(to&&this.years.includes(to))){
+      this.f.y0=this.years.includes(from)?from:null; this.f.y1=this.years.includes(to)?to:null;
+      let [y0,y1]=this.yearRange(); if(y0>y1){ this.f.y1=y0; [y0,y1]=this.yearRange(); }
+      if(this.f.y0===this.years[0]) this.f.y0=null; if(this.f.y1===this.years[this.years.length-1]) this.f.y1=null;
+      const e0=document.getElementById('f-y0'), e1=document.getElementById('f-y1'); if(e0) e0.value=y0; if(e1) e1.value=y1;
+    }
     const q=p.get('q'); if(q){ this.f.q=q; const el=document.getElementById('f-q'); if(el) el.value=q; }
     const cat=p.get('cat'); if(cat!=null){ const want=cat.split(',').filter(c=>this.allCatNames.includes(c)); this.f.cats=new Set(want); }
   },
@@ -490,7 +521,8 @@ const K = {
     if(typeof location==='undefined' || typeof history==='undefined' || !history.replaceState || typeof URLSearchParams==='undefined') return;
     const p=new URLSearchParams();
     if(this.f.nbh) p.set('nbh',this.f.nbh);
-    if(this.f.year) p.set('year',this.f.year);
+    if(this.f.y0) p.set('from',this.f.y0);
+    if(this.f.y1) p.set('to',this.f.y1);
     if(this.f.q) p.set('q',this.f.q);
     if(this.f.cats.size!==this.allCatNames.length) p.set('cat',[...this.f.cats].join(','));
     const qs=p.toString();
@@ -500,7 +532,7 @@ const K = {
     const q=this.f.q.trim().toLowerCase();
     return this.rows.filter(r=>
       (!this.f.nbh || r.neighbourhood===this.f.nbh) &&
-      (!this.f.year || r.yearIssued===this.f.year) &&
+      this.inRange(r.yearIssued) &&
       this.f.cats.has(r.category) &&
       (!q || [r.address,r.permit,r.zone,r.category,r.neighbourhood].some(v=>v&&String(v).toLowerCase().includes(q)))
     );
@@ -513,17 +545,22 @@ const K = {
   scrollTo(id){ const el=document.getElementById(id); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:'smooth',block:'start'}); },
 
   // ---------- Pane A: BC Stats ----------
+  bperSeries(key){ return this.snap.bper.series[key].filter(p=>this.inRange(p.m.slice(0,4))); },
   bperStats(){
-    const S=this.snap.bper.series, total=S.total, units=S.units_total, years=rollupYears(total);
+    const total=this.bperSeries('total'), units=this.bperSeries('units_total'), years=rollupYears(total);
     const peak=years.reduce((b,y)=>!b||y.sum>b.sum?y:b,null);
     return { years, peak, totalSum:sumReported(total), totalN:countReported(total), months:total.length,
       unitsSum:sumReported(units), unitsN:countReported(units), last:lastReported(total) };
   },
   renderBper(){
-    const b=this.snap.bper, S=b.series, st=this.bperStats(), set=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
-    set('bper-range', `${monthLabel(b.first)} to ${monthLabel(b.last)}`);
-    set('b-total', fmt$(st.totalSum)); set('b-total-n', `${st.totalN} of ${st.months} months reported (the rest suppressed or pending)`);
-    set('b-units', fmtN(st.unitsSum)); set('b-units-n', `${st.unitsN} of ${st.months} months reported`);
+    const b=this.snap.bper, st=this.bperStats(), set=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+    const S={}; Object.keys(b.series).forEach(k=>S[k]=this.bperSeries(k));
+    const full=this.isFullRange(), lbl=this.rangeLabel();
+    set('sec-a-title', full?'Construction activity since 2018':`Construction activity, ${lbl}`);
+    set('bper-range', S.total.length? `${monthLabel(S.total[0].m)} to ${monthLabel(S.total[S.total.length-1].m)}` : `no BC Stats months in ${lbl}`);
+    set('b-total-l', full?'Permit value since 2018':`Permit value, ${lbl}`); set('b-units-l', full?'Dwelling units since 2018':`Dwelling units, ${lbl}`);
+    set('b-total', st.months?fmt$(st.totalSum):'—'); set('b-total-n', st.months?`${st.totalN} of ${st.months} months reported (the rest suppressed or pending)`:'BC Stats has no months in this range');
+    set('b-units', st.months?fmtN(st.unitsSum):'—'); set('b-units-n', st.months?`${st.unitsN} of ${st.months} months reported`:'');
     set('b-peak', st.peak?st.peak.year:'—'); set('b-peak-n', st.peak?`${fmt$(st.peak.sum)} across ${st.peak.n} reported months`:'');
     set('b-latest', st.last?monthLabel(st.last.m):'—'); set('b-latest-n', st.last?`${fmt$(st.last.v)} in permits issued`:'');
 
@@ -561,6 +598,9 @@ const K = {
   render(){
     const rows=this.filtered(), s=this.stats(rows); this.cur={rows,s};
     const set=(id,v)=>{const e=document.getElementById(id); if(e) e.textContent=v;};
+    set('yr-scope', this.isFullRange()?`all years ${this.rangeLabel()}`:`years ${this.rangeLabel()}`);
+    this.renderBper();
+    set('sec-b-title', this.isFullRange()?'Permits issued since December 2025':`Permits issued, ${this.rangeLabel()}`);
     set('cnt', fmtN(s.n));
     set('k-count', fmtN(s.n)); set('k-count-n', s.n? `of ${fmtN(this.rows.length)} in the public records` : 'nothing matches these filters');
     set('k-dti', s.medDti==null?'—':`${Math.round(s.medDti)} d`); set('k-dti-n', s.dtis.length? `${s.dtis.length<MIN_N?'small count — ':''}${fmtN(s.dtis.length)} permits with valid dates` : 'no dated permits in view');
@@ -590,7 +630,7 @@ const K = {
     this.chart('c-cat',{type:'bar',data:{labels:s.cats.map(x=>x[0]),datasets:[{data:s.cats.map(x=>x[1]),backgroundColor:s.cats.map((x,i)=>catColor(x[0],this.allCatNames.indexOf(x[0]))),borderRadius:3}]},
       options:{...base,indexAxis:'y',scales:{x:{ticks:{precision:0},beginAtZero:true},y:{grid:{display:false}}}}});
     // months: fill the full issued range so quiet months show as zeros rather than vanishing
-    const allMonths=[...new Set(this.rows.map(r=>r.monthIssued).filter(Boolean))].sort();
+    const allMonths=[...new Set(this.rows.filter(r=>this.inRange(r.yearIssued)).map(r=>r.monthIssued).filter(Boolean))].sort();
     const mm={}; s.months.forEach(([m,n])=>mm[m]=n);
     this.setEmpty('card-month',!s.n);
     this.chart('c-month',{type:'bar',data:{labels:allMonths.map(monthLabel),datasets:[{data:allMonths.map(m=>mm[m]||0),backgroundColor:C.blue,borderRadius:3}]},
@@ -662,7 +702,8 @@ const K = {
       const z=s.zones[0]; if(z) out.push(`Most common parcel zone: <b>${esc(z[0])}</b> (${fmtN(z[1])} permits).`);
       const bm=s.months.slice().sort((a,b)=>b[1]-a[1])[0]; if(bm&&s.months.length>1) out.push(`Busiest month: <b>${monthLabel(bm[0])}</b> with <b>${fmtN(bm[1])}</b> permits issued.`);
     }
-    const st=this.bperStats(); if(st.peak) out.push(`BC Stats: <b>${st.peak.year}</b> was the peak year for permit value at <b>${fmt$(st.peak.sum)}</b> — the LNG Canada construction era.`);
+    const st=this.bperStats(); if(st.peak) out.push(`BC Stats: <b>${st.peak.year}</b> was the peak year for permit value ${this.isFullRange()?'':`in ${this.rangeLabel()} `}at <b>${fmt$(st.peak.sum)}</b>${st.peak.year==='2019'?' — the LNG Canada construction era':''}.`);
+    if(!this.isFullRange() && !s.n && st.months) out.push(`The District's public permit records begin in December 2025, so a year range before then shows BC Stats figures only.`);
     const el=document.getElementById('insights'); if(el) el.innerHTML=out.map(t=>`<div class="insight">${t}</div>`).join('');
     this.insightCount=out.length;
   },
