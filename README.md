@@ -179,11 +179,11 @@ dataset's endpoint, field list and head query from the `DATASETS` registry in
 failure.
 
 The Kitimat sources are checked the same way by `python3 fetch_kitimat.py --check`
-(`npm run smoke:kitimat`). A weekly workflow
-(`.github/workflows/kitimat-refresh.yml`) runs that check, re-fetches the
-snapshot, rebuilds `dist/`, runs `npm test`, and — only when the data changed —
-opens or updates a `bot/kitimat-refresh` pull request for review (it needs the
-repository setting *Allow GitHub Actions to create and approve pull requests*).
+(`npm run smoke:kitimat`). The snapshot is refreshed by hand: run
+`python3 fetch_kitimat.py`, then `python3 build.py` and `npm test`, and commit
+`data/kitimat/` together with the rebuilt `dist/kitimat/`. (A scheduled refresh
+workflow shipped with the page never parsed on GitHub and was removed on
+2026-09-16.)
 
 ## Data & attribution
 
