@@ -13,3 +13,6 @@ Thumbs.db
 
 # Claude Code local tooling (preview launch config, local settings)
 .claude/
+
+# Wrangler local cache (created by running npx wrangler in the repo)
+.wrangler/
